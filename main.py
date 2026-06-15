@@ -26,13 +26,15 @@ PORT = int(os.getenv("PORT", 8080))
 
 
 def start_health_server():
-    async def handler(request):
-        return aiohttp.web.Response(text="OK")
+    from aiohttp import web
 
-    app = aiohttp.web.Application()
+    async def handler(request):
+        return web.Response(text="OK")
+
+    app = web.Application()
     app.router.add_get("/", handler)
     app.router.add_get("/health", handler)
-    runner = aiohttp.web.AppRunner(app)
+    runner = web.AppRunner(app)
 
     async def run():
         await runner.setup()
