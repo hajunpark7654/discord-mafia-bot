@@ -476,78 +476,94 @@ class GameInstance:
         increment_games_won(player.user_id)
 
     async def end_game(self, bot, reason):
-        guild = bot.get_guild(self.guild_id)
-        channel = bot.get_channel(self.channel_id)
+        try:
+            guild = bot.get_guild(self.guild_id)
+            channel = bot.get_channel(self.channel_id)
 
-        if reason == "town":
-            winner_msg = "🏘️ **Town wins!** All Mafia have been eliminated."
-        elif reason == "mafia":
-            winner_msg = "🔪 **Mafia wins!** They now control the town."
-        elif reason == "error":
-            winner_msg = "⚠️ Game ended due to an internal error."
-        elif reason == "admin_ended":
-            winner_msg = "⚠️ Game ended by admin."
-        else:
-            winner_msg = "⚠️ Game over."
+            if reason == "town":
+                winner_msg = "🏘️ **Town wins!** All Mafia have been eliminated."
+            elif reason == "mafia":
+                winner_msg = "🔪 **Mafia wins!** They now control the town."
+            elif reason == "error":
+                winner_msg = "⚠️ Game ended due to an internal error."
+            elif reason == "admin_ended":
+                winner_msg = "⚠️ Game ended by admin."
+            else:
+                winner_msg = "⚠️ Game over."
 
-        points_log = []
-
-        for p in self.players:
-            increment_games_played(p.user_id)
-
-        if reason in ("town", "mafia"):
-            for p in self.alive_players:
-                team = get_role_team(p.role)
-                if reason == "town" and team == "town":
-                    self._award_points_for_player(p, "town_win")
-                elif reason == "mafia" and team == "mafia":
-                    self._award_points_for_player(p, "mafia_win")
-                elif team == "neutral" and p.alive and p.role in ("veteran", "teleporter"):
-                    self._award_points_for_player(p, "neutral_win")
+            points_log = []
 
             for p in self.players:
-                if p.points_earned == 0:
-                    add_points(p.user_id, POINTS["participation"])
-                    points_log.append(f"{p.mention}: +{POINTS['participation']} (participation)")
-                else:
-                    points_log.append(f"{p.mention}: +{p.points_earned} (winner)")
+                increment_games_played(p.user_id)
 
-        elif reason in ("error", "admin_ended"):
-            for p in self.players:
-                add_points(p.user_id, POINTS["premature_end"])
-                points_log.append(f"{p.mention}: +{POINTS['premature_end']} (early end)")
+            if reason in ("town", "mafia"):
+                for p in self.alive_players:
+                    if p.role is None:
+                        continue
+                    team = get_role_team(p.role)
+                    if reason == "town" and team == "town":
+                        self._award_points_for_player(p, "town_win")
+                    elif reason == "mafia" and team == "mafia":
+                        self._award_points_for_player(p, "mafia_win")
+                    elif team == "neutral" and p.alive and p.role in ("veteran", "teleporter"):
+                        self._award_points_for_player(p, "neutral_win")
 
-        summary = f"{winner_msg}"
-        if points_log:
-            summary += f"\n\n**Points awarded:**\n" + "\n".join(points_log)
+                for p in self.players:
+                    if p.points_earned == 0:
+                        add_points(p.user_id, POINTS["participation"])
+                        points_log.append(f"{p.mention}: +{POINTS['participation']} (participation)")
+                    else:
+                        points_log.append(f"{p.mention}: +{p.points_earned} (winner)")
 
-        role_list = "\n".join(
-            f"{'💀' if not p.alive else '✅'} {p.mention} — {ROLE_EMOJIS.get(p.role, '❓')} {p.role.replace('_', ' ').title()}"
-            for p in self.players
-        )
+            elif reason in ("error", "admin_ended"):
+                for p in self.players:
+                    add_points(p.user_id, POINTS["premature_end"])
+                    points_log.append(f"{p.mention}: +{POINTS['premature_end']} (early end)")
 
-        night_summary = ""
-        for i, entry in enumerate(self.night_log, 1):
-            death_type = entry.get("type", "")
-            if death_type in ("death", "mafia_kill"):
-                p = self.get_player_by_id(entry.get("target_id"))
-                if p:
-                    cleaned = " (body cleaned)" if entry.get("cleaned") else ""
-                    night_summary += f"N{i}: {p.mention} died{cleaned}\n"
+            summary = f"{winner_msg}"
+            if points_log:
+                summary += f"\n\n**Points awarded:**\n" + "\n".join(points_log)
 
-        full_summary = f"{summary}\n\n**Roles:**\n{role_list}"
-        if night_summary:
-            full_summary += f"\n\n**Night Log:**\n{night_summary}"
+            def safe_role_name(role):
+                if role is None:
+                    return "Unknown"
+                return role.replace("_", " ").title()
 
-        if channel:
-            await channel.send(full_summary[:2000])
+            role_list = "\n".join(
+                f"{'💀' if not p.alive else '✅'} {p.mention} — {ROLE_EMOJIS.get(p.role, '❓')} {safe_role_name(p.role)}"
+                for p in self.players
+            )
 
-        await cleanup_game_channels(self, guild)
-        GameManager.get_instance().remove_game(self.guild_id)
+            night_summary = ""
+            for i, entry in enumerate(self.night_log, 1):
+                death_type = entry.get("type", "")
+                if death_type in ("death", "mafia_kill"):
+                    p = self.get_player_by_id(entry.get("target_id"))
+                    if p:
+                        cleaned = " (body cleaned)" if entry.get("cleaned") else ""
+                        night_summary += f"N{i}: {p.mention} died{cleaned}\n"
 
-        if reason in ("town", "mafia"):
-            log_game(self.game_type, len(self.players), reason, {
-                "winner_team": reason,
-                "player_count": len(self.players),
-                "day_number": self.day_number,
-            })
+            full_summary = f"{summary}\n\n**Roles:**\n{role_list}"
+            if night_summary:
+                full_summary += f"\n\n**Night Log:**\n{night_summary}"
+
+            if channel:
+                try:
+                    await channel.send(full_summary[:2000])
+                except:
+                    pass
+
+        except Exception as e:
+            print(f"END_GAME ERROR: {e}")
+        finally:
+            try:
+                await cleanup_game_channels(self, guild)
+            except:
+                pass
+            GameManager.get_instance().remove_game(self.guild_id)
+            if reason in ("town", "mafia"):
+                log_game(self.game_type, len(self.players), reason, {
+                    "winner_team": reason,
+                    "player_count": len(self.players),
+                    "day_number": self.day_number,
+                })
