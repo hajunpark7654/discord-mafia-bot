@@ -51,6 +51,7 @@ class GameInstance:
         self.players = []
         self.day_number = 0
         self.night_number = 0
+        self.test_mode = False
         self.game_category = None
         self.town_square = None
         self.mafia_den = None
@@ -69,7 +70,7 @@ class GameInstance:
         self._force_advance = False
         self._force_day = False
         self.point_bonus = False
-        self._game_id = id(self)
+        self.game_id = id(self)
         self._cancel_event = asyncio.Event()
         self._preshout_task = None
 
@@ -164,6 +165,8 @@ class GameInstance:
         await setup_game_channels(self, guild)
 
         for p in self.players:
+            if p.is_dummy:
+                continue
             member = guild.get_member(p.user_id)
             if member:
                 p.original_roles = [r.id for r in member.roles if r.name != "@everyone" and not r.managed]
@@ -184,11 +187,54 @@ class GameInstance:
 
         await self._run_game_loop(bot)
 
+    async def start_test_game(self, bot, admin_member):
+        self.test_mode = True
+        self.state = "playing"
+        guild = bot.get_guild(self.guild_id)
+        if not guild:
+            return
+
+        self.add_player(admin_member)
+        for i in range(4):
+            dummy = Player(is_dummy=True, dummy_id=1000 + i)
+            self.players.append(dummy)
+
+        await setup_game_channels(self, guild)
+
+        for p in self.players:
+            if p.is_dummy:
+                continue
+            member = guild.get_member(p.user_id)
+            if member:
+                p.original_roles = [r.id for r in member.roles if r.name != "@everyone" and not r.managed]
+                await member.edit(roles=[self.player_role])
+                await member.add_roles(self.player_role)
+
+        assignments, self.mafia_team = assign_roles(len(self.players), self.players)
+
+        await add_mafia_permissions(self, guild, self.mafia_team)
+
+        await self._send_role_dms(bot)
+
+        mafia_count = len(self.living_mafia)
+        neutral_count = len(self.living_neutral)
+        town_count = len(self.living_town)
+        announce = f"🧪 **TEST MODE** — {len(self.players)} players (you + 4 dummies)"
+        await self.town_square.send(announce)
+
+        await self.town_square.send(f"**Teams:** 🔪 {mafia_count} Mafia | 🎭 {neutral_count} Neutral | 🏘️ {town_count} Town")
+
+        self.is_auto = True
+        self.is_hosted = False
+        await self._run_game_loop(bot)
+
     async def _send_role_dms(self, bot):
         mafia_ids = [p.user_id for p in self.mafia_team]
         mafia_names = ", ".join(p.mention for p in self.mafia_team)
 
         for p in self.players:
+            if p.is_dummy:
+                continue
             emoji = ROLE_EMOJIS.get(p.role, "❓")
             desc = ROLE_DESCRIPTIONS.get(p.role, "No special ability.")
             team = get_role_team(p.role)
@@ -386,16 +432,18 @@ class GameInstance:
             return
         promoted = random.choice(candidates)
         promoted.role = "mafia"
-        try:
-            await promoted.member.send("🔪 You have been promoted to **Mafia Killer**! You can now kill at night.")
-        except:
-            pass
-        mafia_names = ", ".join(p.mention for p in self.living_mafia)
-        for p in self.living_mafia:
+        if not promoted.is_dummy:
             try:
-                await p.member.send(f"🔄 {promoted.mention} is now the **Mafia Killer**.")
+                await promoted.member.send("🔪 You have been promoted to **Mafia Killer**! You can now kill at night.")
             except:
                 pass
+        mafia_names = ", ".join(p.mention for p in self.living_mafia)
+        for p in self.living_mafia:
+            if not p.is_dummy:
+                try:
+                    await p.member.send(f"🔄 {promoted.mention} is now the **Mafia Killer**.")
+                except:
+                    pass
 
     def _award_points_for_player(self, player, points_key):
         is_bonus = self.is_hosted

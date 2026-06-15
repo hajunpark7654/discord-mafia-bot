@@ -63,6 +63,21 @@ def setup_admin_commands(bot: commands.Bot):
         game.start_preshout_timer(bot)
         await interaction.response.send_message("✅ Preshout posted!", ephemeral=True)
 
+    @bot.tree.command(name="test", description="Run a test game (single-player) to verify everything works.", guild=guild)
+    async def test_game(interaction: discord.Interaction):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+
+        manager = GameManager.get_instance()
+        if manager.get_game(interaction.guild_id):
+            await interaction.response.send_message("❌ A game is already in progress.", ephemeral=True)
+            return
+
+        game = manager.create_game(interaction.guild_id, interaction.channel_id, game_type="Mafia")
+        await interaction.response.send_message("🧪 Starting test game...", ephemeral=True)
+        asyncio.create_task(game.start_test_game(bot, interaction.user))
+
     @bot.tree.command(name="start", description="Start the game as host (you spectate) or auto (you play).", guild=guild)
     @app_commands.describe(mode="'auto' to play, or leave blank to host")
     async def start(interaction: discord.Interaction, mode: str = None):
