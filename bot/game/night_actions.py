@@ -20,7 +20,7 @@ async def collect_night_actions(game, bot):
         coros.append(coro)
     await asyncio.gather(*coros)
 
-    timeout = 300 if game.is_auto else 600
+    timeout = 10 if getattr(game, 'test_mode', False) else (300 if game.is_auto else 600)
     check_interval = 5
     elapsed = 0
     while elapsed < timeout:

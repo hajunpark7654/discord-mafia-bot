@@ -11,7 +11,7 @@ async def run_nomination_phase(game, bot):
     for player in game.alive_players:
         await send_nomination_dm(player, game, bot)
 
-    timeout = 300 if game.is_auto else 600
+    timeout = 10 if getattr(game, 'test_mode', False) else (300 if game.is_auto else 600)
     check_interval = 5
     elapsed = 0
     while elapsed < timeout:
@@ -104,7 +104,7 @@ async def run_trial_phase(game, bot, accused_player):
     for player in game.alive_players:
         await send_trial_vote_dm(player, game, bot, accused_player)
 
-    timeout = 300 if game.is_auto else 600
+    timeout = 10 if getattr(game, 'test_mode', False) else (300 if game.is_auto else 600)
     check_interval = 5
     elapsed = 0
     while elapsed < timeout:
