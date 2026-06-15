@@ -38,11 +38,11 @@ def start_health_server():
 
     async def run():
         await runner.setup()
-        site = aiohttp.web.TCPSite(runner, "0.0.0.0", PORT)
+        site = web.TCPSite(runner, "0.0.0.0", PORT)
         await site.start()
         print(f"Health server running on port {PORT}")
 
-    asyncio.create_task(run())
+    return run
 
 
 async def auto_preshout():
@@ -107,6 +107,10 @@ async def on_ready():
     print(f"Bot ready: {bot.user}")
     init_db()
 
+    if hasattr(bot, "health_server_coro") and bot.health_server_coro:
+        await bot.health_server_coro()
+        bot.health_server_coro = None
+
     await bot.tree.sync(guild=Object(id=GUILD_ID))
 
     enabled = get_config("autohost_enabled")
@@ -123,7 +127,7 @@ def main():
     if not token:
         print("ERROR: DISCORD_BOT_TOKEN not found in .env")
         return
-    start_health_server()
+    bot.health_server_coro = start_health_server()
     bot.run(token)
 
 
