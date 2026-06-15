@@ -189,12 +189,13 @@ class GameInstance:
 
     async def start_test_game(self, bot, admin_member):
         self.test_mode = True
+        self.state = "lobby"
+        self.add_player(admin_member)
         self.state = "playing"
         guild = bot.get_guild(self.guild_id)
         if not guild:
             return
 
-        self.add_player(admin_member)
         for i in range(4):
             dummy = Player(is_dummy=True, dummy_id=1000 + i)
             self.players.append(dummy)
