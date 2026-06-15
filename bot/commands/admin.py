@@ -7,7 +7,7 @@ from config import (
     GUILD_ID, POINTS, ROLE_EMOJIS,
 )
 from bot.game.engine import GameManager
-from bot.database.db import add_points, deduct_points, get_leaderboard, get_points, set_config, get_config
+from bot.database.db import add_points, deduct_points, get_leaderboard, get_points, set_config, get_config, wipe_all_points, get_top_player
 from bot.client import is_admin
 
 
@@ -207,13 +207,33 @@ def setup_admin_commands(bot: commands.Bot):
         if not rows:
             await interaction.response.send_message("No points data yet.", ephemeral=True)
             return
-        embed = discord.Embed(title="🏆 Points Leaderboard", color=discord.Color.gold())
+        embed = discord.Embed(
+            title="🏆 Points Leaderboard",
+            color=discord.Color.gold(),
+            description="Top 10 players by total points"
+        )
+        medals = ["🥇", "🥈", "🥉"]
         for i, row in enumerate(rows[:10], 1):
             user = bot.get_user(row["user_id"])
             name = user.display_name if user else f"<@{row['user_id']}>"
+            medal = medals[i - 1] if i <= 3 else f"`{i}.`"
             wr = f" ({row['games_won']}/{row['games_played']}W)" if row['games_played'] > 0 else ""
-            embed.add_field(name=f"{i}. {name}", value=f"{row['points']} pts{wr}", inline=False)
+            embed.add_field(
+                name=f"{medal} {name}",
+                value=f"╰ {row['points']} pts{wr}",
+                inline=False
+            )
+        embed.set_footer(text="🏆 Points Leaderboard • Updated live")
         await interaction.response.send_message(embed=embed)
+
+    @bot.tree.command(name="wipe_points", description="Wipe ALL points for all users. Admin only.", guild=guild)
+    async def wipe_pts(interaction: discord.Interaction):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        wipe_all_points()
+        await interaction.followup.send("✅ All points wiped.", ephemeral=True)
 
     @bot.tree.command(name="points", description="Check your or another's points.", guild=guild)
     @app_commands.describe(user="User to check (optional)")

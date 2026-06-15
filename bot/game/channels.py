@@ -85,25 +85,56 @@ def get_role_team(role_name):
 
 
 async def cleanup_game_channels(game, guild):
+    import asyncio
+
     for player in game.players:
         member = guild.get_member(player.user_id)
         if member:
-            await member.remove_roles(game.player_role)
-            await member.remove_roles(game.dead_role)
+            try:
+                await member.remove_roles(game.player_role)
+            except:
+                pass
+            try:
+                await member.remove_roles(game.dead_role)
+            except:
+                pass
             if player.original_roles:
                 roles_to_add = [guild.get_role(rid) for rid in player.original_roles if guild.get_role(rid)]
                 for role in roles_to_add:
-                    await member.add_roles(role)
+                    try:
+                        await member.add_roles(role)
+                    except:
+                        pass
 
     if game.town_square:
-        await game.town_square.delete()
+        try:
+            await game.town_square.delete()
+        except:
+            pass
     if game.mafia_den:
-        await game.mafia_den.delete()
+        try:
+            await game.mafia_den.delete()
+        except:
+            pass
     if game.dead_chat:
-        await game.dead_chat.delete()
-    if game.game_category:
-        await game.game_category.delete()
+        try:
+            await game.dead_chat.delete()
+        except:
+            pass
+
     if game.player_role:
-        await game.player_role.delete()
+        try:
+            await game.player_role.delete()
+        except:
+            pass
     if game.dead_role:
-        await game.dead_role.delete()
+        try:
+            await game.dead_role.delete()
+        except:
+            pass
+
+    if game.game_category:
+        try:
+            await game.game_category.delete()
+        except:
+            pass

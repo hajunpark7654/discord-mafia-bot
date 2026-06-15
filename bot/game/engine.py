@@ -12,7 +12,7 @@ from bot.game.role import assign_roles, get_role_team, is_killing_role, get_poin
 from bot.game.channels import setup_game_channels, add_mafia_permissions, cleanup_game_channels
 from bot.game.night_actions import collect_night_actions, resolve_night_actions
 from bot.game.day_actions import run_nomination_phase, run_trial_phase
-from bot.database.db import add_points, increment_games_played, increment_games_won, log_game
+from bot.database.db import add_points, increment_games_played, increment_games_won, log_game, get_top_player
 
 
 class GameManager:
@@ -62,7 +62,7 @@ class GameInstance:
         self.nomination_counts = {}
         self.trial_player = None
         self.votes = {}
-        self.night_log = []
+        self.night_log = {}
         self._tasks = []
         self.mafia_team = []
         self.preshout_message = None
@@ -315,6 +315,8 @@ class GameInstance:
         guild = bot.get_guild(self.guild_id)
         self.night_number += 1
 
+        self.night_log[self.night_number] = []
+
         await self._toggle_mafia_chat(guild, open_chat=True)
 
         msg = f"🌙 **Night {self.night_number} falls.** The town sleeps..."
@@ -329,16 +331,17 @@ class GameInstance:
         if self._force_advance:
             self._force_advance = False
 
-        deaths, janitor_target = await resolve_night_actions(self)
+        deaths, janitor_target, night_entries = await resolve_night_actions(self)
+        self.night_log[self.night_number].extend(night_entries)
         deaths = [d for d in deaths if d[0].alive]
-
-        await self._toggle_mafia_chat(guild, open_chat=False)
-
-        await self._announce_morning(deaths, janitor_target, guild, bot)
 
         for victim, cause in deaths:
             if victim.alive:
                 await self._kill_player(guild, victim)
+
+        await self._toggle_mafia_chat(guild, open_chat=False)
+
+        await self._announce_morning(deaths, janitor_target, guild, bot)
 
         self._check_neutral_wins(bot, guild)
 
@@ -359,6 +362,7 @@ class GameInstance:
 
     async def _announce_morning(self, deaths, janitor_target, guild, bot):
         self.day_number += 1
+        alive_count = len(self.alive_players)
         msg = f"🌅 **Morning comes...**\n"
 
         if deaths:
@@ -366,7 +370,7 @@ class GameInstance:
                 if cause == "mafia_kill" and janitor_target == victim.user_id:
                     msg += f"💀 Somebody was killed last night, but the body was never found.\n"
                 elif cause == "mafia_kill":
-                    msg += f"💀 {victim.mention} was found dead. The Mafia struck in the night.\n"
+                    msg += f"💀 {victim.mention} was found dead in the town square.\n"
                     msg += f"🏘️ They were **{victim.role.replace('_', ' ').title()}**.\n"
                 elif cause == "duel":
                     msg += f"🏴‍☠️ {victim.mention} was killed in a duel!\n"
@@ -375,7 +379,7 @@ class GameInstance:
         else:
             msg += "☀️ Nobody died last night.\n"
 
-        msg += f"\n☀️ **Day {self.day_number}** — {len(self.alive_players)} players alive."
+        msg += f"\n☀️ **Day {self.day_number}** — {alive_count} players alive."
         await self.town_square.send(msg)
 
     async def _kill_player(self, guild, player):
@@ -389,14 +393,6 @@ class GameInstance:
                 await self.dead_chat.set_permissions(member, read_messages=True, send_messages=True)
             except:
                 pass
-
-        entry = {
-            "type": "death",
-            "target_id": player.user_id,
-            "role": player.role,
-            "alive": False
-        }
-        self.night_log.append(entry)
 
     async def _day_phase(self, bot):
         self._force_advance = False
@@ -417,6 +413,10 @@ class GameInstance:
             if victim:
                 guild = bot.get_guild(self.guild_id)
                 await self._kill_player(guild, victim)
+                if self.day_number in self.night_log:
+                    self.night_log[self.day_number].append(
+                        {"type": "trial_death", "target_id": victim.user_id}
+                    )
                 jester_check = any(p for p in self.players if p.role == "jester" and not p.alive and p.user_id == victim.user_id)
                 if jester_check:
                     await self.town_square.send(f"🤡 {victim.mention} was the **Jester** and wins!")
@@ -444,6 +444,9 @@ class GameInstance:
             if player.role == "pirate" and player.duel_wins >= 2:
                 self._award_points_for_player(player, "neutral_win")
                 player.alive = False
+                n = self.night_number
+                if n in self.night_log:
+                    self.night_log[n].append({"type": "duel_pirate_win", "target_id": player.user_id})
                 asyncio.ensure_future(self._kill_player(guild, player))
                 asyncio.ensure_future(self.town_square.send(f"🏴‍☠️ {player.mention} the **Pirate** won their duels and sails away!"))
             if player.role == "teleporter" and self._check_win_condition() is not None:
@@ -491,6 +494,22 @@ class GameInstance:
         add_points(player.user_id, points)
         increment_games_won(player.user_id)
 
+    def _announce_leaderboard_top(self, bot):
+        try:
+            top = get_top_player()
+            if top and any(p.user_id == top["user_id"] for p in self.players):
+                async def announce():
+                    guild = bot.get_guild(self.guild_id)
+                    if guild:
+                        channel = bot.get_channel(self.channel_id) or guild.system_channel
+                        if channel:
+                            await channel.send(
+                                f"👑 Congratulations **{top['name']}** — you're now **#1** on the leaderboard with **{top['points']}** points!"
+                            )
+                asyncio.ensure_future(announce())
+        except:
+            pass
+
     async def end_game(self, bot, reason):
         if self._cancel_token.is_set():
             return
@@ -499,18 +518,17 @@ class GameInstance:
             guild = bot.get_guild(self.guild_id)
             channel = bot.get_channel(self.channel_id)
 
+            team_winner = reason
             if reason == "town":
-                winner_msg = "🏘️ **Town wins!** All Mafia have been eliminated."
+                winner_msg = "🌅 **TOWN WINS!** All Mafia have been eliminated!"
             elif reason == "mafia":
-                winner_msg = "🔪 **Mafia wins!** They now control the town."
+                winner_msg = "🌙 **MAFIA WINS!** They now control the town!"
             elif reason == "error":
                 winner_msg = "⚠️ Game ended due to an internal error."
             elif reason == "admin_ended":
                 winner_msg = "⚠️ Game ended by admin."
             else:
                 winner_msg = "⚠️ Game over."
-
-            points_log = []
 
             for p in self.players:
                 increment_games_played(p.user_id)
@@ -530,55 +548,129 @@ class GameInstance:
                 for p in self.players:
                     if p.points_earned == 0:
                         add_points(p.user_id, POINTS["participation"])
-                        points_log.append(f"{p.mention}: +{POINTS['participation']} (participation)")
-                    else:
-                        points_log.append(f"{p.mention}: +{p.points_earned} (winner)")
+                        p.points_earned = POINTS["participation"]
 
             elif reason in ("error", "admin_ended"):
                 for p in self.players:
                     add_points(p.user_id, POINTS["premature_end"])
-                    points_log.append(f"{p.mention}: +{POINTS['premature_end']} (early end)")
-
-            summary = f"{winner_msg}"
-            if points_log:
-                summary += f"\n\n**Points awarded:**\n" + "\n".join(points_log)
+                    p.points_earned = POINTS["premature_end"]
 
             def safe_role_name(role):
                 if role is None:
                     return "Unknown"
                 return role.replace("_", " ").title()
 
-            role_list = "\n".join(
-                f"{'💀' if not p.alive else '✅'} {p.mention} — {ROLE_EMOJIS.get(p.role, '❓')} {safe_role_name(p.role)}"
-                for p in self.players
-            )
+            role_lines = []
+            for p in self.players:
+                status = "Alive" if p.alive else "Dead"
+                emoji = ROLE_EMOJIS.get(p.role, "❓")
+                team = get_role_team(p.role)
+                team_emoji = {"town": "🏘️", "mafia": "🔪", "neutral": "🎭"}.get(team, "❓")
+                role_lines.append(f"• {p.mention}: {team_emoji} {safe_role_name(p.role)} - ({status})")
 
-            night_summary = ""
-            for i, entry in enumerate(self.night_log, 1):
-                death_type = entry.get("type", "")
-                if death_type in ("death", "mafia_kill"):
-                    p = self.get_player_by_id(entry.get("target_id"))
-                    if p:
-                        cleaned = " (body cleaned)" if entry.get("cleaned") else ""
-                        night_summary += f"N{i}: {p.mention} died{cleaned}\n"
+            role_list = "\n".join(role_lines)
 
-            full_summary = f"{summary}\n\n**Roles:**\n{role_list}"
+            points_lines = []
+            for p in self.players:
+                if p.points_earned > 0:
+                    emoji = ROLE_EMOJIS.get(p.role, "💰")
+                    points_lines.append(f"{emoji} {p.mention}: Reward granted: {p.points_earned}")
+
+            points_summary = "\n".join(points_lines)
+
+            night_summary_lines = []
+            for n in sorted(self.night_log.keys()):
+                entries = self.night_log[n]
+                if not entries:
+                    continue
+                night_summary_lines.append(f"\n**Night {n}**")
+                for e in entries:
+                    etype = e.get("type")
+                    if etype == "mafia_kill":
+                        target = self.get_player_by_id(e.get("target_id"))
+                        if target:
+                            cleaned = " (body cleaned)" if e.get("cleaned") else ""
+                            night_summary_lines.append(f"  🔪 Mafia killed {target.mention}.{cleaned}")
+                    elif etype == "protect":
+                        target = self.get_player_by_id(e.get("target_id"))
+                        saved = e.get("saved", False)
+                        killer = self.get_player_by_id(e.get("killer_id"))
+                        if target and saved:
+                            night_summary_lines.append(f"  💉 Mafia targeted {target.mention} - Doctor saved them.")
+                    elif etype == "swap":
+                        p1 = self.get_player_by_id(e.get("player1_id"))
+                        p2 = self.get_player_by_id(e.get("player2_id"))
+                        if p1 and p2:
+                            night_summary_lines.append(f"  🌀 Teleporter swapped {p1.mention} ↔ {p2.mention}.")
+                    elif etype == "duel":
+                        winner = self.get_player_by_id(e.get("winner_id"))
+                        loser = self.get_player_by_id(e.get("loser_id"))
+                        if winner and loser:
+                            night_summary_lines.append(f"  🏴‍☠️ {winner.mention} dueled and killed {loser.mention}!")
+                    elif etype == "veteran_kill":
+                        target = self.get_player_by_id(e.get("target_id"))
+                        if target:
+                            night_summary_lines.append(f"  🎖️ {target.mention} visited a Veteran on alert and died.")
+                    elif etype == "bh_kill":
+                        target = self.get_player_by_id(e.get("target_id"))
+                        if target:
+                            night_summary_lines.append(f"  🎯 Bounty Hunter killed {target.mention}!")
+                    elif etype == "investigate":
+                        target = self.get_player_by_id(e.get("target_id"))
+                        result = e.get("result", "Unknown")
+                        if target:
+                            night_summary_lines.append(f"  🔎 Sheriff investigated {target.mention} — {result}.")
+                    elif etype == "roleblock":
+                        target = self.get_player_by_id(e.get("target_id"))
+                        if target:
+                            night_summary_lines.append(f"  🔒 Consort roleblocked {target.mention}.")
+                    elif etype == "frame":
+                        target = self.get_player_by_id(e.get("target_id"))
+                        if target:
+                            night_summary_lines.append(f"  🖼️ {target.mention} was framed.")
+                    elif etype == "trial_death":
+                        target = self.get_player_by_id(e.get("target_id"))
+                        if target:
+                            night_summary_lines.append(f"  ⚖️ {target.mention} was voted out and executed.")
+                    elif etype == "jester_win":
+                        target = self.get_player_by_id(e.get("target_id"))
+                        if target:
+                            night_summary_lines.append(f"  🤡 {target.mention} was the Jester and won!")
+                    elif etype == "duel_pirate_win":
+                        target = self.get_player_by_id(e.get("target_id"))
+                        if target:
+                            night_summary_lines.append(f"  🏴‍☠️ {target.mention} won their duels and sails away!")
+
+            night_summary = "\n".join(night_summary_lines)
+
+            parts = [winner_msg, "", f"**Roles:**", role_list]
+            if points_summary:
+                parts.extend(["", points_summary])
             if night_summary:
-                full_summary += f"\n\n**Night Log:**\n{night_summary}"
+                parts.extend(["", "📋 **Night Summary:**", night_summary])
+
+            full_summary = "\n".join(parts)
 
             if channel:
-                try:
-                    await channel.send(full_summary[:2000])
-                except:
-                    pass
+                for i in range(0, len(full_summary), 1900):
+                    chunk = full_summary[i:i + 1900]
+                    try:
+                        await channel.send(chunk)
+                    except:
+                        pass
+
+            self._announce_leaderboard_top(bot)
 
         except Exception as e:
+            import traceback
             print(f"END_GAME ERROR: {e}")
+            traceback.print_exc()
         finally:
-            try:
-                await cleanup_game_channels(self, guild)
-            except:
-                pass
+            if guild:
+                try:
+                    await cleanup_game_channels(self, guild)
+                except Exception as e:
+                    print(f"CLEANUP ERROR: {e}")
             GameManager.get_instance().remove_game(self.guild_id)
             if reason in ("town", "mafia"):
                 log_game(self.game_type, len(self.players), reason, {

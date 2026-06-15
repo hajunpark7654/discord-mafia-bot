@@ -118,3 +118,22 @@ def set_config(key, value):
     c.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, str(value)))
     conn.commit()
     conn.close()
+
+
+def wipe_all_points():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM points")
+    conn.commit()
+    conn.close()
+
+
+def get_top_player():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT user_id, points FROM points ORDER BY points DESC LIMIT 1")
+    row = c.fetchone()
+    conn.close()
+    if row:
+        return {"user_id": row[0], "points": row[1], "name": f"<@{row[0]}>"}
+    return None

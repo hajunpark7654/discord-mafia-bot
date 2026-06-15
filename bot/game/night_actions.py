@@ -151,10 +151,13 @@ async def send_janitor_dm(player, game, bot):
     if player.janitor_used:
         return
     last_night_kill = None
-    for entry in reversed(game.night_log):
-        if entry.get("type") == "mafia_kill":
-            last_night_kill = entry
-            break
+    prev_nights = [n for n in sorted(game.night_log.keys()) if n < game.night_number]
+    if prev_nights:
+        last_night = prev_nights[-1]
+        for entry in reversed(game.night_log[last_night]):
+            if entry.get("type") == "mafia_kill":
+                last_night_kill = entry
+                break
     if last_night_kill:
         target_id = last_night_kill.get("target_id")
         target = game.get_player_by_id(target_id)
@@ -244,8 +247,22 @@ async def send_dm(player, embed, view):
         pass
 
 
+def resolve_rps(p1, p2):
+    choices = ["rock", "paper", "scissors"]
+    c1 = random.choice(choices)
+    c2 = random.choice(choices)
+    if c1 == c2:
+        return resolve_rps(p1, p2)
+    if (c1 == "rock" and c2 == "scissors") or \
+       (c1 == "paper" and c2 == "rock") or \
+       (c1 == "scissors" and c2 == "paper"):
+        return p1
+    return p2
+
+
 async def resolve_night_actions(game):
     deaths = []
+    entries = []
     protections = set()
     roleblocks = set()
     frames = set()
@@ -274,6 +291,7 @@ async def resolve_night_actions(game):
                         visitors.append(other_player)
             for v in visitors:
                 deaths.append((v, "veteran"))
+                entries.append({"type": "veteran_kill", "target_id": v.user_id})
 
     for uid, data in game.night_actions_queue.items():
         player = game.get_player_by_id(uid)
@@ -283,6 +301,9 @@ async def resolve_night_actions(game):
         target_id = data.get("target")
 
         if uid in roleblocks:
+            if action in ("kill", "protect", "investigate", "watch", "duel", "swap1", "frame", "bh_kill"):
+                entries.append({"type": "roleblock", "target_id": uid})
+                continue
             continue
 
         if action == "protect":
@@ -297,6 +318,7 @@ async def resolve_night_actions(game):
                 is_suspicious = get_role_team(target.role) in ("mafia", "neutral")
                 is_framed = target_id in frames
                 result = "Suspicious" if (is_suspicious or is_framed) else "Clean"
+                entries.append({"type": "investigate", "target_id": target_id, "result": result})
                 try:
                     await player.member.send(f"🔎 **Sheriff:** Your investigation returns: **{result}**")
                 except discord.Forbidden:
@@ -320,8 +342,10 @@ async def resolve_night_actions(game):
                 if winner == player:
                     deaths.append((target, "duel"))
                     player.duel_wins += 1
+                    entries.append({"type": "duel", "winner_id": player.user_id, "loser_id": target.user_id})
                 else:
                     deaths.append((player, "duel"))
+                    entries.append({"type": "duel", "winner_id": target.user_id, "loser_id": player.user_id})
         elif action == "swap1":
             first_player_id = uid
             second_player_id = target_id
@@ -329,6 +353,7 @@ async def resolve_night_actions(game):
                 if other_data.get("action") == "swap1" and other_uid != uid:
                     second_player_id = other_data.get("target")
             if first_player_id and second_player_id:
+                entries.append({"type": "swap", "player1_id": first_player_id, "player2_id": second_player_id})
                 for other_uid, other_data in game.night_actions_queue.items():
                     if other_data.get("target") == first_player_id:
                         other_data["target"] = second_player_id
@@ -336,6 +361,9 @@ async def resolve_night_actions(game):
                         other_data["target"] = first_player_id
         elif action == "frame":
             frames.add(target_id)
+            target_obj = game.get_player_by_id(target_id)
+            if target_obj:
+                entries.append({"type": "frame", "target_id": target_id})
         elif action == "janitor":
             janitor_target = target_id
             player.janitor_used = True
@@ -356,7 +384,19 @@ async def resolve_night_actions(game):
         log_entry = {"type": "mafia_kill", "target_id": mafia_kill_target.user_id}
         if janitor_target == mafia_kill_target.user_id:
             log_entry["cleaned"] = True
-        game.night_log.append(log_entry)
+        entries.append(log_entry)
+    elif any(d[1] != "veteran" for d in deaths):
+        pass
+
+    for uid, data in game.night_actions_queue.items():
+        player = game.get_player_by_id(uid)
+        if not player or not player.alive:
+            continue
+        action = data.get("action")
+        target_id = data.get("target")
+        if action == "protect":
+            if mafia_kill_target and mafia_kill_target.user_id in protections and target_id == mafia_kill_target.user_id:
+                entries.append({"type": "protect", "target_id": target_id, "saved": True, "killer_id": uid})
 
     bh_kill_target = None
     for uid, data in game.night_actions_queue.items():
@@ -375,6 +415,7 @@ async def resolve_night_actions(game):
 
     if bh_kill_target:
         deaths.append((bh_kill_target, "bounty_hunter"))
+        entries.append({"type": "bh_kill", "target_id": bh_kill_target.user_id})
 
     for uid in veteran_alerts:
         player = game.get_player_by_id(uid)
@@ -388,4 +429,4 @@ async def resolve_night_actions(game):
             seen_ids.add(victim.user_id)
             unique_deaths.append((victim, cause))
 
-    return unique_deaths, janitor_target
+    return unique_deaths, janitor_target, entries
