@@ -170,8 +170,10 @@ class GameInstance:
             member = guild.get_member(p.user_id)
             if member:
                 p.original_roles = [r.id for r in member.roles if r.name != "@everyone" and not r.managed]
-                await member.edit(roles=[self.player_role])
-                await member.add_roles(self.player_role)
+                try:
+                    await member.add_roles(self.player_role)
+                except discord.Forbidden:
+                    pass
 
         assignments, self.mafia_team = assign_roles(len(self.players), self.players)
 
@@ -213,8 +215,10 @@ class GameInstance:
                 member = guild.get_member(p.user_id)
                 if member:
                     p.original_roles = [r.id for r in member.roles if r.name != "@everyone" and not r.managed]
-                    await member.edit(roles=[self.player_role])
-                    await member.add_roles(self.player_role)
+                    try:
+                        await member.add_roles(self.player_role)
+                    except discord.Forbidden:
+                        pass
 
             print("TEST: assigning roles")
             assignments, self.mafia_team = assign_roles(len(self.players), self.players)
