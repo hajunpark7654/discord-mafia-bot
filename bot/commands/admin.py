@@ -49,6 +49,7 @@ def setup_admin_commands(bot: commands.Bot):
             if not player:
                 await btn_interaction.response.send_message("❌ Game is not accepting players.", ephemeral=True)
                 return
+            game.reset_preshout_timer()
             await btn_interaction.response.send_message(f"✅ {btn_interaction.user.mention} joined! ({len(game.players)} players)", ephemeral=True)
             new_desc = f"**{len(game.players)} player(s) have joined.**\n\nNeeds at least **{MIN_PLAYERS}** players. Click the button to join."
             embed.description = new_desc
@@ -59,6 +60,7 @@ def setup_admin_commands(bot: commands.Bot):
         game.join_button_active = True
         msg = await interaction.channel.send(embed=embed, view=view)
         game.preshout_message = msg
+        game.start_preshout_timer(bot)
         await interaction.response.send_message("✅ Preshout posted!", ephemeral=True)
 
     @bot.tree.command(name="start", description="Start the game as host (you spectate) or auto (you play).", guild=guild)
@@ -88,7 +90,7 @@ def setup_admin_commands(bot: commands.Bot):
         await interaction.response.send_message("🎮 Game is starting...", ephemeral=True)
         asyncio.create_task(game.start_game(bot))
 
-    @bot.tree.command(name="end", description="Prematurely end the current game.", guild=guild)
+    @bot.tree.command(name="end", description="Cancel a preshout or end an active game.", guild=guild)
     async def end_game(interaction: discord.Interaction):
         if not is_admin(interaction):
             await interaction.response.send_message("❌ Only the admin can use this command.", ephemeral=True)
@@ -97,11 +99,15 @@ def setup_admin_commands(bot: commands.Bot):
         manager = GameManager.get_instance()
         game = manager.get_game(interaction.guild_id)
         if not game:
-            await interaction.response.send_message("❌ No active game.", ephemeral=True)
+            await interaction.response.send_message("❌ No active preshout or game.", ephemeral=True)
             return
 
-        await game.end_game(bot, "admin_ended")
-        await interaction.response.send_message("✅ Game ended.", ephemeral=True)
+        if game.state == "lobby":
+            await game.cancel_lobby(bot, "Cancelled by admin.")
+            await interaction.response.send_message("✅ Preshout cancelled.", ephemeral=True)
+        else:
+            await game.end_game(bot, "admin_ended")
+            await interaction.response.send_message("✅ Game ended.", ephemeral=True)
 
     @bot.tree.command(name="force_night", description="Force advance to night phase.", guild=guild)
     async def force_night(interaction: discord.Interaction):

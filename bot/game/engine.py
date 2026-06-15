@@ -5,6 +5,7 @@ from config import (
     MIN_PLAYERS, AUTO_MODE_TIMEOUT, HOSTED_MODE_TIMEOUT,
     POINTS, ROLE_EMOJIS, ROLE_DESCRIPTIONS, ROLE_REGISTRY,
     ADMIN_USER_ID, PRESHOUT_CHANNEL_ID, NOMINATIONS_REQUIRED,
+    PRESHOUT_AUTO_CANCEL_IDLE, PRESHOUT_AUTO_CANCEL_JOINED,
 )
 from bot.game.player import Player
 from bot.game.role import assign_roles, get_role_team, is_killing_role, get_points_key
@@ -69,6 +70,55 @@ class GameInstance:
         self._force_day = False
         self.point_bonus = False
         self._game_id = id(self)
+        self._cancel_event = asyncio.Event()
+        self._preshout_task = None
+
+    async def cancel_lobby(self, bot, reason="cancelled"):
+        self._cancel_event.set()
+        if self.preshout_message:
+            try:
+                await self.preshout_message.edit(
+                    content=f"❌ Lobby cancelled: {reason}",
+                    embed=None, view=None
+                )
+            except:
+                pass
+        self.state = "cancelled"
+        GameManager.get_instance().remove_game(self.guild_id)
+
+    def start_preshout_timer(self, bot):
+        async def timer_loop():
+            while self.state == "lobby":
+                wait = PRESHOUT_AUTO_CANCEL_JOINED if self.players else PRESHOUT_AUTO_CANCEL_IDLE
+                try:
+                    await asyncio.wait_for(
+                        asyncio.get_event_loop().create_future(),
+                        timeout=wait
+                    )
+                except asyncio.TimeoutError:
+                    pass
+                if self.state != "lobby":
+                    return
+                if self._cancel_event.is_set():
+                    return
+                if not self.players:
+                    await self.cancel_lobby(bot, "No one joined.")
+                    if self.preshout_message:
+                        channel = self.preshout_message.channel
+                        try:
+                            await channel.send("⏰ Preshout auto-cancelled — no one joined.")
+                        except:
+                            pass
+                    return
+                else:
+                    continue
+            if self._cancel_event.is_set():
+                return
+        self._preshout_task = asyncio.create_task(timer_loop())
+
+    def reset_preshout_timer(self):
+        if self.state == "lobby" and self._cancel_event.is_set():
+            self._cancel_event.clear()
 
     @property
     def alive_players(self):
