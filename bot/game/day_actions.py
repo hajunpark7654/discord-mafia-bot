@@ -39,6 +39,8 @@ async def run_nomination_phase(game, bot):
 
 
 async def send_nomination_dm(player, game, bot):
+    if player.is_dummy or not player.member:
+        return
     targets = [p for p in game.alive_players if p.user_id != player.user_id]
     if not targets:
         return
@@ -139,6 +141,8 @@ async def run_trial_phase(game, bot, accused_player):
 
 
 async def send_trial_vote_dm(player, game, bot, accused):
+    if player.is_dummy or not player.member:
+        return
     view = discord.ui.View()
     guilty_btn = discord.ui.Button(label="Guilty", style=discord.ButtonStyle.danger)
     innocent_btn = discord.ui.Button(label="Innocent", style=discord.ButtonStyle.success)

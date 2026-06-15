@@ -36,6 +36,8 @@ async def collect_night_actions(game, bot):
 
 
 async def send_night_dm(player, game, bot):
+    if player.is_dummy or not player.member:
+        return
     role_name = player.role
     if role_name == "town":
         return
@@ -82,6 +84,8 @@ async def build_target_select(player, game, prompt, targets, action_key):
 
 
 async def send_simple_dm(player, text):
+    if not player.member:
+        return
     try:
         await player.member.send(text)
     except discord.Forbidden:
@@ -211,6 +215,8 @@ async def send_bounty_hunter_dm(player, game, bot):
 
 
 async def send_dm(player, embed, view):
+    if not player.member:
+        return
     try:
         await player.member.send(embed=embed, view=view)
     except discord.Forbidden:
