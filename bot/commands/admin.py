@@ -108,21 +108,28 @@ def setup_admin_commands(bot: commands.Bot):
     @bot.tree.command(name="end", description="Cancel a preshout or end an active game.", guild=guild)
     async def end_game(interaction: discord.Interaction):
         if not is_admin(interaction):
-            await interaction.response.send_message("❌ Only the admin can use this command.", ephemeral=True)
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
+
+        await interaction.response.defer(ephemeral=True)
 
         manager = GameManager.get_instance()
         game = manager.get_game(interaction.guild_id)
         if not game:
-            await interaction.response.send_message("❌ No active preshout or game.", ephemeral=True)
+            await interaction.followup.send("❌ No active preshout or game.", ephemeral=True)
             return
 
         if game.state == "lobby":
             await game.cancel_lobby(bot, "Cancelled by admin.")
-            await interaction.response.send_message("✅ Preshout cancelled.", ephemeral=True)
+            await interaction.followup.send("✅ Preshout cancelled.", ephemeral=True)
         else:
-            await game.end_game(bot, "admin_ended")
-            await interaction.response.send_message("✅ Game ended.", ephemeral=True)
+            try:
+                await game.end_game(bot, "admin_ended")
+                await interaction.followup.send("✅ Game ended.", ephemeral=True)
+            except Exception as e:
+                print(f"END ERROR: {e}")
+                GameManager.get_instance().remove_game(interaction.guild_id)
+                await interaction.followup.send(f"⚠️ Game force-cleaned.", ephemeral=True)
 
     @bot.tree.command(name="force_night", description="Force advance to night phase.", guild=guild)
     async def force_night(interaction: discord.Interaction):
