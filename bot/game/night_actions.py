@@ -2,6 +2,7 @@ import asyncio
 import random
 import discord
 from config import ROLE_EMOJIS, ROLE_DESCRIPTIONS, ROLE_REGISTRY
+from bot.game.role import is_killing_role
 
 
 def get_role_team(role_name):
@@ -20,6 +21,24 @@ async def collect_night_actions(game, bot):
         coros.append(coro)
     await asyncio.gather(*coros)
 
+    if getattr(game, 'test_mode', False):
+        for player in game.alive_players:
+            if not player.is_dummy:
+                continue
+            if is_killing_role(player.role):
+                targets = [p for p in game.alive_players if not p.is_dummy and get_role_team(p.role) != "mafia"]
+                if targets:
+                    target = random.choice(targets)
+                    game.night_actions_queue[player.user_id] = {"action": "kill", "target": target.user_id}
+                else:
+                    targets = [p for p in game.alive_players if get_role_team(p.role) != "mafia"]
+                    if targets:
+                        target = random.choice(targets)
+                        game.night_actions_queue[player.user_id] = {"action": "kill", "target": target.user_id}
+            else:
+                if game.night_actions_queue[player.user_id]["action"] is None:
+                    game.night_actions_queue[player.user_id] = {"action": "skip", "target": None}
+
     timeout = 10 if getattr(game, 'test_mode', False) else (300 if game.is_auto else 600)
     check_interval = 5
     elapsed = 0
@@ -28,6 +47,8 @@ async def collect_night_actions(game, bot):
         elapsed += check_interval
         if getattr(game, '_force_advance', False):
             setattr(game, '_force_advance', False)
+            break
+        if getattr(game, '_cancel_token', None) and game._cancel_token.is_set():
             break
 
     for uid, data in game.night_actions_queue.items():
@@ -265,6 +286,10 @@ async def resolve_night_actions(game):
             continue
 
         if action == "protect":
+            if uid == target_id:
+                if player.self_heal_used:
+                    continue
+                player.self_heal_used = True
             protections.add(target_id)
         elif action == "investigate":
             target = game.get_player_by_id(target_id)

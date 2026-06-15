@@ -72,6 +72,7 @@ class GameInstance:
         self.point_bonus = False
         self.game_id = id(self)
         self._cancel_event = asyncio.Event()
+        self._cancel_token = asyncio.Event()
         self._preshout_task = None
 
     async def cancel_lobby(self, bot, reason="cancelled"):
@@ -286,21 +287,28 @@ class GameInstance:
 
     async def _run_game_loop(self, bot):
         try:
-            while True:
+            while not self._cancel_token.is_set():
                 await self._night_phase(bot)
+                if self._cancel_token.is_set():
+                    break
                 check = self._check_win_condition()
                 if check:
                     await self.end_game(bot, check)
                     return
 
                 await self._day_phase(bot)
+                if self._cancel_token.is_set():
+                    break
                 check = self._check_win_condition()
                 if check:
                     await self.end_game(bot, check)
                     return
+        except asyncio.CancelledError:
+            pass
         except Exception as e:
             print(f"Game error: {e}")
-            await self.end_game(bot, "error")
+            if not self._cancel_token.is_set():
+                await self.end_game(bot, "error")
 
     async def _night_phase(self, bot):
         self._force_advance = False
@@ -315,6 +323,8 @@ class GameInstance:
         await self.town_square.send(msg)
 
         await collect_night_actions(self, bot)
+        if self._cancel_token.is_set():
+            return
 
         if self._force_advance:
             self._force_advance = False
@@ -396,6 +406,8 @@ class GameInstance:
         await self.town_square.send(msg)
 
         accused = await run_nomination_phase(self, bot)
+        if self._cancel_token.is_set():
+            return
 
         if self._force_advance:
             self._force_advance = False
@@ -480,6 +492,9 @@ class GameInstance:
         increment_games_won(player.user_id)
 
     async def end_game(self, bot, reason):
+        if self._cancel_token.is_set():
+            return
+        self._cancel_token.set()
         try:
             guild = bot.get_guild(self.guild_id)
             channel = bot.get_channel(self.channel_id)

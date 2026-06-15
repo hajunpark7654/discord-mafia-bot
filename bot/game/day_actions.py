@@ -20,6 +20,8 @@ async def run_nomination_phase(game, bot):
         if getattr(game, '_force_advance', False):
             setattr(game, '_force_advance', False)
             break
+        if getattr(game, '_cancel_token', None) and game._cancel_token.is_set():
+            break
 
     tally = {}
     for nominator_id, targets in game.nomination_counts.items():
@@ -112,6 +114,8 @@ async def run_trial_phase(game, bot, accused_player):
         elapsed += check_interval
         if getattr(game, '_force_advance', False):
             setattr(game, '_force_advance', False)
+            break
+        if getattr(game, '_cancel_token', None) and game._cancel_token.is_set():
             break
 
     guilty = sum(1 for v in game.votes.values() if v == "guilty")
