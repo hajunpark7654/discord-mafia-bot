@@ -81,7 +81,29 @@ async def kill_player(game, guild, player):
 def get_role_team(role_name):
     from config import ROLE_REGISTRY
     info = ROLE_REGISTRY.get(role_name, {})
-    return info.get("team", "town")
+    return info.get("faction", "town")
+
+
+async def add_medium_dead_access(game, guild, player):
+    if not game.dead_chat:
+        return
+    member = guild.get_member(player.user_id)
+    if member:
+        try:
+            await game.dead_chat.set_permissions(member, read_messages=True, send_messages=True)
+        except:
+            pass
+
+
+async def remove_medium_dead_access(game, guild, player):
+    if not game.dead_chat:
+        return
+    member = guild.get_member(player.user_id)
+    if member:
+        try:
+            await game.dead_chat.set_permissions(member, overwrite=None)
+        except:
+            pass
 
 
 async def cleanup_game_channels(game, guild):

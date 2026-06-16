@@ -1,4 +1,5 @@
 import asyncio
+import random
 import discord
 from discord import Member
 from config import (
@@ -6,9 +7,11 @@ from config import (
     POINTS, ROLE_EMOJIS, ROLE_DESCRIPTIONS, ROLE_REGISTRY,
     ADMIN_USER_ID, PRESHOUT_CHANNEL_ID, NOMINATIONS_REQUIRED,
     PRESHOUT_AUTO_CANCEL_IDLE, PRESHOUT_AUTO_CANCEL_JOINED,
+    TEAMS, TEAM_DISPLAY_ORDER, FACTION_MAFIA, FACTION_TOWN, FACTION_NEUTRAL,
+    NIGHT_DEATH_MESSAGES, VOTE_OUT_MESSAGES,
 )
 from bot.game.player import Player
-from bot.game.role import assign_roles, get_role_team, is_killing_role, get_points_key
+from bot.game.role import assign_roles, get_role_team, get_role_faction, is_killing_role, get_points_key
 from bot.game.channels import setup_game_channels, add_mafia_permissions, cleanup_game_channels
 from bot.game.night_actions import collect_night_actions, resolve_night_actions
 from bot.game.day_actions import run_nomination_phase, run_trial_phase
@@ -20,6 +23,7 @@ class GameManager:
 
     def __init__(self):
         self.games = {}
+        self._last_cleanup = None
 
     @classmethod
     def get_instance(cls):
@@ -38,6 +42,23 @@ class GameManager:
     def remove_game(self, guild_id):
         if guild_id in self.games:
             del self.games[guild_id]
+
+    def store_last_cleanup(self, guild, category, player_role, dead_role, town_square, mafia_den, dead_chat):
+        self._last_cleanup = {
+            "guild": guild,
+            "category": category,
+            "player_role": player_role,
+            "dead_role": dead_role,
+            "town_square": town_square,
+            "mafia_den": mafia_den,
+            "dead_chat": dead_chat,
+        }
+
+    def get_last_cleanup(self):
+        return self._last_cleanup
+
+    def clear_last_cleanup(self):
+        self._last_cleanup = None
 
 
 class GameInstance:
@@ -132,15 +153,15 @@ class GameInstance:
 
     @property
     def living_mafia(self):
-        return [p for p in self.alive_players if get_role_team(p.role) == "mafia"]
+        return [p for p in self.alive_players if get_role_faction(p.role) == FACTION_MAFIA]
 
     @property
     def living_town(self):
-        return [p for p in self.alive_players if get_role_team(p.role) == "town"]
+        return [p for p in self.alive_players if get_role_faction(p.role) == FACTION_TOWN]
 
     @property
     def living_neutral(self):
-        return [p for p in self.alive_players if get_role_team(p.role) == "neutral"]
+        return [p for p in self.alive_players if get_role_faction(p.role) == FACTION_NEUTRAL]
 
     def get_player_by_id(self, user_id):
         for p in self.players:
@@ -182,11 +203,7 @@ class GameInstance:
 
         await self._send_role_dms(bot)
 
-        mafia_count = len(self.living_mafia)
-        neutral_count = len(self.living_neutral)
-        town_count = len(self.living_town)
-        announce = f"**Teams:** 🔪 {mafia_count} Mafia | 🎭 {neutral_count} Neutral | 🏘️ {town_count} Town"
-        await self.town_square.send(announce)
+        await self._send_team_breakdown()
 
         await self._run_game_loop(bot)
 
@@ -223,6 +240,22 @@ class GameInstance:
 
             print("TEST: assigning roles")
             assignments, self.mafia_team = assign_roles(len(self.players), self.players)
+
+            test_role = getattr(self, '_test_role', None)
+            if test_role and test_role in ROLE_REGISTRY:
+                admin_player = self.get_player_by_id(admin_member.id)
+                if admin_player:
+                    current_owner = None
+                    for p in self.players:
+                        if p.role == test_role and p.is_dummy:
+                            current_owner = p
+                            break
+                    if current_owner:
+                        current_owner.role = admin_player.role
+                    admin_player.role = test_role
+                    self.mafia_team = [p for p in self.players if get_role_faction(p.role) == FACTION_MAFIA]
+                    print(f"TEST: admin assigned role {test_role}")
+
             print(f"TEST: roles assigned, mafia team size: {len(self.mafia_team)}")
 
             await add_mafia_permissions(self, guild, self.mafia_team)
@@ -231,12 +264,9 @@ class GameInstance:
             await self._send_role_dms(bot)
             print("TEST: role DMs done")
 
-            mafia_count = len(self.living_mafia)
-            neutral_count = len(self.living_neutral)
-            town_count = len(self.living_town)
             announce = f"🧪 **TEST MODE** — {len(self.players)} players (you + 4 dummies)"
             await self.town_square.send(announce)
-            await self.town_square.send(f"**Teams:** 🔪 {mafia_count} Mafia | 🎭 {neutral_count} Neutral | 🏘️ {town_count} Town")
+            await self._send_team_breakdown()
 
             self.is_auto = True
             self.is_hosted = False
@@ -261,12 +291,14 @@ class GameInstance:
             emoji = ROLE_EMOJIS.get(p.role, "❓")
             desc = ROLE_DESCRIPTIONS.get(p.role, "No special ability.")
             team = get_role_team(p.role)
+            faction = get_role_faction(p.role)
+            team_display = TEAMS.get(team, {}).get("display", team.replace("_", " ").title())
             embed = discord.Embed(
                 title=f"{emoji} Your Role: {p.role.replace('_', ' ').title()}",
-                description=f"**Team:** {team.title()}\n**Ability:** {desc}",
+                description=f"**Team:** {team_display}\n**Ability:** {desc}",
                 color=discord.Color.dark_blue()
             )
-            if team == "mafia":
+            if faction == FACTION_MAFIA:
                 embed.add_field(name="👥 Teammates", value=mafia_names, inline=False)
             if p.role == "bounty_hunter":
                 target_role = self._get_bh_target_role(p)
@@ -276,6 +308,19 @@ class GameInstance:
                 await p.member.send(embed=embed)
             except discord.Forbidden:
                 pass
+
+    async def _send_team_breakdown(self):
+        from collections import Counter
+        team_counts = Counter()
+        for p in self.players:
+            team = get_role_team(p.role)
+            team_counts[team] += 1
+        lines = ["**Team Breakdown:**"]
+        for team_key in TEAM_DISPLAY_ORDER:
+            count = team_counts.get(team_key, 0)
+            if count > 0:
+                lines.append(f"{TEAMS[team_key]['display']}: {count}")
+        await self.town_square.send("\n".join(lines))
 
     def _get_bh_target_role(self, player):
         import random
@@ -328,12 +373,26 @@ class GameInstance:
         if self._cancel_token.is_set():
             return
 
+        medium_player = None
+        for uid, data in self.night_actions_queue.items():
+            if data.get("action") == "medium":
+                p = self.get_player_by_id(uid)
+                if p:
+                    medium_player = p
+                    from bot.game.channels import add_medium_dead_access
+                    await add_medium_dead_access(self, guild, p)
+                    break
+
         if self._force_advance:
             self._force_advance = False
 
         deaths, janitor_target, night_entries = await resolve_night_actions(self)
         self.night_log[self.night_number].extend(night_entries)
         deaths = [d for d in deaths if d[0].alive]
+
+        if medium_player:
+            from bot.game.channels import remove_medium_dead_access
+            await remove_medium_dead_access(self, guild, medium_player)
 
         for victim, cause in deaths:
             if victim.alive:
@@ -352,7 +411,7 @@ class GameInstance:
         if not self.mafia_den:
             return
         for player in self.players:
-            if get_role_team(player.role) == "mafia" and player.alive:
+            if get_role_faction(player.role) == FACTION_MAFIA and player.alive:
                 member = guild.get_member(player.user_id)
                 if member:
                     if open_chat:
@@ -368,14 +427,26 @@ class GameInstance:
         if deaths:
             for victim, cause in deaths:
                 if cause == "mafia_kill" and janitor_target == victim.user_id:
-                    msg += f"💀 Somebody was killed last night, but the body was never found.\n"
+                    message = random.choice(NIGHT_DEATH_MESSAGES).replace("{name}", victim.mention)
+                    msg += f"💀 {message} *The body was never identified.*\n"
                 elif cause == "mafia_kill":
-                    msg += f"💀 {victim.mention} was found dead in the town square.\n"
+                    message = random.choice(NIGHT_DEATH_MESSAGES).replace("{name}", victim.mention)
+                    msg += f"💀 {message}\n"
+                    msg += f"🏘️ They were **{victim.role.replace('_', ' ').title()}**.\n"
+                elif cause == "ambush":
+                    message = random.choice(NIGHT_DEATH_MESSAGES).replace("{name}", victim.mention)
+                    msg += f"🌲 {message}\n"
                     msg += f"🏘️ They were **{victim.role.replace('_', ' ').title()}**.\n"
                 elif cause == "duel":
-                    msg += f"🏴‍☠️ {victim.mention} was killed in a duel!\n"
+                    msg += f"🏴‍☠️ {victim.mention} was found dead from a duel!\n"
+                    msg += f"🏘️ They were **{victim.role.replace('_', ' ').title()}**.\n"
                 elif cause == "veteran":
-                    msg += f"🎖️ {victim.mention} visited a Veteran on alert and was killed!\n"
+                    msg += f"🎖️ {victim.mention} was found dead with defensive wounds.\n"
+                    msg += f"🏘️ They were **{victim.role.replace('_', ' ').title()}**.\n"
+                elif cause == "bounty_hunter":
+                    message = random.choice(NIGHT_DEATH_MESSAGES).replace("{name}", victim.mention)
+                    msg += f"🎯 {message}\n"
+                    msg += f"🏘️ They were **{victim.role.replace('_', ' ').title()}**.\n"
         else:
             msg += "☀️ Nobody died last night.\n"
 
@@ -417,12 +488,21 @@ class GameInstance:
                     self.night_log[self.day_number].append(
                         {"type": "trial_death", "target_id": victim.user_id}
                     )
-                jester_check = any(p for p in self.players if p.role == "jester" and not p.alive and p.user_id == victim.user_id)
+
+                faction = get_role_faction(victim.role)
+                jester_check = victim.role == "jester" and not victim.alive
+
                 if jester_check:
+                    vote_msg = random.choice(VOTE_OUT_MESSAGES).replace("{name}", victim.mention).replace("{role}", "")
+                    await self.town_square.send(f"⚖️ {vote_msg}")
                     await self.town_square.send(f"🤡 {victim.mention} was the **Jester** and wins!")
                     self._award_points_for_player(victim, "jester_win")
+                elif faction in (FACTION_MAFIA, FACTION_NEUTRAL):
+                    vote_msg = random.choice(VOTE_OUT_MESSAGES).replace("{name}", victim.mention).replace("{role}", "")
+                    await self.town_square.send(f"⚖️ {vote_msg}")
                 else:
-                    await self.town_square.send(f"⚖️ {victim.mention} was found guilty and eliminated!")
+                    vote_msg = random.choice(VOTE_OUT_MESSAGES).replace("{name}", victim.mention).replace("{role}", f"{victim.role.replace('_', ' ').title()}")
+                    await self.town_square.send(f"⚖️ {vote_msg} They were **{victim.role.replace('_', ' ').title()}**.")
                 self._check_neutral_wins(bot, bot.get_guild(self.guild_id))
         else:
             await self.town_square.send(f"📭 No trial today. Nobody reached the required {NOMINATIONS_REQUIRED} nomination(s).")
@@ -537,13 +617,16 @@ class GameInstance:
                 for p in self.alive_players:
                     if p.role is None:
                         continue
-                    team = get_role_team(p.role)
-                    if reason == "town" and team == "town":
+                    faction = get_role_faction(p.role)
+                    if reason == "town" and faction == FACTION_TOWN:
                         self._award_points_for_player(p, "town_win")
-                    elif reason == "mafia" and team == "mafia":
+                    elif reason == "mafia" and faction == FACTION_MAFIA:
                         self._award_points_for_player(p, "mafia_win")
-                    elif team == "neutral" and p.alive and p.role in ("veteran", "teleporter"):
-                        self._award_points_for_player(p, "neutral_win")
+                    elif faction == FACTION_NEUTRAL and p.alive:
+                        if p.role in ("veteran", "teleporter"):
+                            self._award_points_for_player(p, "neutral_win")
+                        elif p.role == "survivor":
+                            self._award_points_for_player(p, "survivor_win")
 
                 for p in self.players:
                     if p.points_earned == 0:
@@ -564,9 +647,9 @@ class GameInstance:
             for p in self.players:
                 status = "Alive" if p.alive else "Dead"
                 emoji = ROLE_EMOJIS.get(p.role, "❓")
-                team = get_role_team(p.role)
-                team_emoji = {"town": "🏘️", "mafia": "🔪", "neutral": "🎭"}.get(team, "❓")
-                role_lines.append(f"• {p.mention}: {team_emoji} {safe_role_name(p.role)} - ({status})")
+                faction = get_role_faction(p.role)
+                faction_emoji = {"town": "🏘️", "mafia": "🔪", "neutral": "🎭"}.get(faction, "❓")
+                role_lines.append(f"• {p.mention}: {faction_emoji} {safe_role_name(p.role)} - ({status})")
 
             role_list = "\n".join(role_lines)
 
@@ -659,6 +742,18 @@ class GameInstance:
                     except:
                         pass
 
+            if guild:
+                manager = GameManager.get_instance()
+                manager.store_last_cleanup(
+                    guild=guild,
+                    category=self.game_category,
+                    player_role=self.player_role,
+                    dead_role=self.dead_role,
+                    town_square=self.town_square,
+                    mafia_den=self.mafia_den,
+                    dead_chat=self.dead_chat,
+                )
+
             self._announce_leaderboard_top(bot)
 
         except Exception as e:
@@ -666,11 +761,16 @@ class GameInstance:
             print(f"END_GAME ERROR: {e}")
             traceback.print_exc()
         finally:
-            if guild:
-                try:
-                    await cleanup_game_channels(self, guild)
-                except Exception as e:
-                    print(f"CLEANUP ERROR: {e}")
+            for p in self.players:
+                member = guild.get_member(p.user_id) if guild else None
+                if member:
+                    try:
+                        if self.player_role:
+                            member.remove_roles(self.player_role)
+                        if self.dead_role:
+                            member.remove_roles(self.dead_role)
+                    except:
+                        pass
             GameManager.get_instance().remove_game(self.guild_id)
             if reason in ("town", "mafia"):
                 log_game(self.game_type, len(self.players), reason, {

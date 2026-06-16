@@ -63,8 +63,9 @@ def setup_admin_commands(bot: commands.Bot):
         game.start_preshout_timer(bot)
         await interaction.response.send_message("✅ Preshout posted!", ephemeral=True)
 
-    @bot.tree.command(name="test", description="Run a test game (single-player) to verify everything works.", guild=guild)
-    async def test_game(interaction: discord.Interaction):
+    @bot.tree.command(name="test", description="Run a test game with a chosen role.", guild=guild)
+    @app_commands.describe(role="Optional role to assign yourself (e.g. mafia, doctor, sheriff)")
+    async def test_game(interaction: discord.Interaction, role: str = None):
         if not is_admin(interaction):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
@@ -75,6 +76,8 @@ def setup_admin_commands(bot: commands.Bot):
             return
 
         game = manager.create_game(interaction.guild_id, interaction.channel_id, game_type="Mafia")
+        if role:
+            game._test_role = role.lower().strip()
         await interaction.response.send_message("🧪 Starting test game...", ephemeral=True)
         asyncio.create_task(game.start_test_game(bot, interaction.user))
 
@@ -104,6 +107,61 @@ def setup_admin_commands(bot: commands.Bot):
 
         await interaction.response.send_message("🎮 Game is starting...", ephemeral=True)
         asyncio.create_task(game.start_game(bot))
+
+    @bot.tree.command(name="close", description="Close the last game's channels and category.", guild=guild)
+    async def close_channels(interaction: discord.Interaction):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        manager = GameManager.get_instance()
+        cleanup = manager.get_last_cleanup()
+        if not cleanup:
+            await interaction.followup.send("❌ No previous game channels to close.", ephemeral=True)
+            return
+
+        guild = cleanup["guild"]
+        deleted = 0
+
+        if cleanup["town_square"]:
+            try:
+                await cleanup["town_square"].delete()
+                deleted += 1
+            except:
+                pass
+        if cleanup["mafia_den"]:
+            try:
+                await cleanup["mafia_den"].delete()
+                deleted += 1
+            except:
+                pass
+        if cleanup["dead_chat"]:
+            try:
+                await cleanup["dead_chat"].delete()
+                deleted += 1
+            except:
+                pass
+        if cleanup["player_role"]:
+            try:
+                await cleanup["player_role"].delete()
+                deleted += 1
+            except:
+                pass
+        if cleanup["dead_role"]:
+            try:
+                await cleanup["dead_role"].delete()
+                deleted += 1
+            except:
+                pass
+        if cleanup["category"]:
+            try:
+                await cleanup["category"].delete()
+                deleted += 1
+            except:
+                pass
+
+        manager.clear_last_cleanup()
+        await interaction.followup.send(f"✅ Cleaned up {deleted} items.", ephemeral=True)
 
     @bot.tree.command(name="end", description="Cancel a preshout or end an active game.", guild=guild)
     async def end_game(interaction: discord.Interaction):

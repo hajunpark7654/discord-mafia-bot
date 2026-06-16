@@ -27,6 +27,8 @@ class Player:
         self.bh_killed = False
         self.bh_target_role = None
         self.bh_exposed = False
+        self.survivor_vest = True
+        self.medium_used = False
         self.points_earned = 0
 
     def to_dict(self):

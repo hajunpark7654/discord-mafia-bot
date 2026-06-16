@@ -1,13 +1,13 @@
 import asyncio
 import random
 import discord
-from config import ROLE_EMOJIS, ROLE_DESCRIPTIONS, ROLE_REGISTRY
+from config import ROLE_EMOJIS, ROLE_DESCRIPTIONS, ROLE_REGISTRY, FACTION_MAFIA, FACTION_TOWN
 from bot.game.role import is_killing_role
 
 
 def get_role_team(role_name):
     info = ROLE_REGISTRY.get(role_name, {})
-    return info.get("team", "town")
+    return info.get("faction", "town")
 
 
 async def collect_night_actions(game, bot):
@@ -64,17 +64,22 @@ async def send_night_dm(player, game, bot):
         return
     sender_map = {
         "mafia": send_mafia_kill_dm,
+        "ambusher": send_ambusher_dm,
         "doctor": send_doctor_dm,
         "sheriff": send_sheriff_dm,
         "framer": send_framer_dm,
         "consort": send_consort_dm,
         "janitor": send_janitor_dm,
+        "consigliere": send_consigliere_dm,
         "psychic": send_psychic_dm,
         "lookout": send_lookout_dm,
+        "investigator": send_investigator_dm,
+        "medium": send_medium_dm,
         "pirate": send_pirate_dm,
         "teleporter": send_teleporter_dm,
         "veteran": send_veteran_dm,
         "bounty_hunter": send_bounty_hunter_dm,
+        "survivor": send_survivor_dm,
     }
     sender = sender_map.get(role_name)
     if sender:
@@ -229,6 +234,80 @@ async def send_psychic_dm(player, game, bot):
             game.night_actions_queue[player.user_id] = {"action": "psychic", "target": None}
 
 
+async def send_consigliere_dm(player, game, bot):
+    targets = [p for p in game.alive_players if p.user_id != player.user_id]
+    embed, view = await build_target_select(player, game, "🔍 Choose someone to investigate (exact role):", targets, "consigliere")
+    if embed:
+        await send_dm(player, embed, view)
+
+
+async def send_investigator_dm(player, game, bot):
+    targets = [p for p in game.alive_players if p.user_id != player.user_id]
+    embed, view = await build_target_select(player, game, "🔬 Choose someone to investigate (3 possibilities):", targets, "investigate2")
+    if embed:
+        await send_dm(player, embed, view)
+
+
+async def send_medium_dm(player, game, bot):
+    if game.night_number % 3 == 0 or player.medium_used:
+        player.medium_used = True
+        view = discord.ui.View()
+        visit_btn = discord.ui.Button(label="Visit the Dead", style=discord.ButtonStyle.secondary, emoji="👻")
+
+        async def visit_cb(interaction):
+            if interaction.user.id != player.user_id:
+                return
+            game.night_actions_queue[player.user_id] = {"action": "medium", "target": None}
+            await interaction.response.send_message("👻 You commune with the dead tonight.", ephemeral=True)
+
+        visit_btn.callback = visit_cb
+        view.add_item(visit_btn)
+        embed = discord.Embed(
+            title="👻 Medium",
+            description="You feel a pull toward the afterlife... Visit the dead?",
+            color=discord.Color.dark_purple()
+        )
+        await send_dm(player, embed, view)
+
+
+async def send_ambusher_dm(player, game, bot):
+    targets = [p for p in game.alive_players if p.user_id != player.user_id]
+    embed, view = await build_target_select(player, game, "🌲 Choose a location to lurk — kill anyone who visits:", targets, "ambush")
+    if embed:
+        await send_dm(player, embed, view)
+
+
+async def send_survivor_dm(player, game, bot):
+    if not player.survivor_vest:
+        return
+    view = discord.ui.View()
+    vest_btn = discord.ui.Button(label="Wear Bulletproof Vest", style=discord.ButtonStyle.success, emoji="🛡️")
+    no_btn = discord.ui.Button(label="Save for later", style=discord.ButtonStyle.secondary)
+
+    async def vest_cb(interaction):
+        if interaction.user.id != player.user_id:
+            return
+        game.night_actions_queue[player.user_id] = {"action": "vest", "target": None}
+        await interaction.response.send_message("🛡️ You put on your bulletproof vest.", ephemeral=True)
+
+    async def no_cb(interaction):
+        if interaction.user.id != player.user_id:
+            return
+        game.night_actions_queue[player.user_id] = {"action": "skip", "target": None}
+        await interaction.response.send_message("You stay passive.", ephemeral=True)
+
+    vest_btn.callback = vest_cb
+    no_btn.callback = no_cb
+    view.add_item(vest_btn)
+    view.add_item(no_btn)
+    embed = discord.Embed(
+        title="🛡️ Survivor",
+        description="Do you want to use your bulletproof vest tonight? (1 use)",
+        color=discord.Color.green()
+    )
+    await send_dm(player, embed, view)
+
+
 async def send_bounty_hunter_dm(player, game, bot):
     if player.bh_killed:
         return
@@ -269,6 +348,8 @@ async def resolve_night_actions(game):
     veteran_alerts = set()
     janitor_target = None
 
+    ambush_targets = set()
+
     for uid, data in game.night_actions_queue.items():
         player = game.get_player_by_id(uid)
         if not player or not player.alive:
@@ -278,6 +359,11 @@ async def resolve_night_actions(game):
             roleblocks.add(data.get("target"))
         if action == "alert":
             veteran_alerts.add(player.user_id)
+        if action == "ambush":
+            ambush_target = data.get("target")
+            if ambush_target:
+                ambush_targets.add(ambush_target)
+                entries.append({"type": "ambush_set", "ambusher_id": uid, "target_id": ambush_target})
 
     for uid in veteran_alerts:
         player = game.get_player_by_id(uid)
@@ -301,7 +387,7 @@ async def resolve_night_actions(game):
         target_id = data.get("target")
 
         if uid in roleblocks:
-            if action in ("kill", "protect", "investigate", "watch", "duel", "swap1", "frame", "bh_kill"):
+            if action in ("kill", "protect", "investigate", "investigate2", "consigliere", "watch", "duel", "swap1", "frame", "bh_kill", "ambush"):
                 entries.append({"type": "roleblock", "target_id": uid})
                 continue
             continue
@@ -315,12 +401,36 @@ async def resolve_night_actions(game):
         elif action == "investigate":
             target = game.get_player_by_id(target_id)
             if target:
-                is_suspicious = get_role_team(target.role) in ("mafia", "neutral")
+                is_suspicious = get_role_team(target.role) != FACTION_TOWN
                 is_framed = target_id in frames
                 result = "Suspicious" if (is_suspicious or is_framed) else "Clean"
                 entries.append({"type": "investigate", "target_id": target_id, "result": result})
                 try:
                     await player.member.send(f"🔎 **Sheriff:** Your investigation returns: **{result}**")
+                except discord.Forbidden:
+                    pass
+        elif action == "investigate2":
+            target = game.get_player_by_id(target_id)
+            if target:
+                from bot.game.role import get_role_team as grt
+                from config import ROLE_REGISTRY as rr
+                all_roles = list(rr.keys())
+                possible = [r for r in all_roles if r != target.role and r != "town"]
+                decoys = random.sample(possible, min(2, len(possible)))
+                candidates = [target.role] + decoys
+                random.shuffle(candidates)
+                result_str = ", ".join(r.replace("_", " ").title() for r in candidates)
+                entries.append({"type": "investigate2", "target_id": target_id, "result": result_str})
+                try:
+                    await player.member.send(f"🔬 **Investigator:** Your target could be one of: **{result_str}**")
+                except discord.Forbidden:
+                    pass
+        elif action == "consigliere":
+            target = game.get_player_by_id(target_id)
+            if target:
+                exact = target.role.replace("_", " ").title()
+                try:
+                    await player.member.send(f"🔍 **Consigliere:** Your target's role is: **{exact}**")
                 except discord.Forbidden:
                     pass
         elif action == "watch":
@@ -367,6 +477,26 @@ async def resolve_night_actions(game):
         elif action == "janitor":
             janitor_target = target_id
             player.janitor_used = True
+        elif action == "ambush":
+            pass
+        elif action == "vest":
+            pass
+
+    for ambush_uid, data in list(game.night_actions_queue.items()):
+        if data.get("action") != "ambush":
+            continue
+        ambusher = game.get_player_by_id(ambush_uid)
+        if not ambusher or not ambusher.alive:
+            continue
+        ambush_target_id = data.get("target")
+        for visitor_uid, visitor_data in game.night_actions_queue.items():
+            if visitor_uid == ambush_uid:
+                continue
+            if visitor_data.get("target") == ambush_target_id and visitor_uid not in veteran_alerts:
+                visitor = game.get_player_by_id(visitor_uid)
+                if visitor and visitor.alive:
+                    deaths.append((visitor, "ambush"))
+                    entries.append({"type": "ambush_kill", "target_id": visitor.user_id, "ambusher_id": ambush_uid})
 
     mafia_kill_target = None
     for uid, data in game.night_actions_queue.items():
@@ -380,21 +510,29 @@ async def resolve_night_actions(game):
                     break
 
     if mafia_kill_target:
+        survivor = game.get_player_by_id(mafia_kill_target.user_id)
+        if survivor and survivor.role == "survivor" and survivor.survivor_vest:
+            for uid, vdata in game.night_actions_queue.items():
+                if vdata.get("action") == "vest" and uid == mafia_kill_target.user_id:
+                    survivor.survivor_vest = False
+                    deaths.append(None)
+                    entries.append({"type": "protect", "target_id": mafia_kill_target.user_id, "saved": True, "killer_id": uid, "vest": True})
+                    mafia_kill_target = None
+                    break
+
+    if mafia_kill_target:
         deaths.append((mafia_kill_target, "mafia_kill"))
         log_entry = {"type": "mafia_kill", "target_id": mafia_kill_target.user_id}
         if janitor_target == mafia_kill_target.user_id:
             log_entry["cleaned"] = True
         entries.append(log_entry)
-    elif any(d[1] != "veteran" for d in deaths):
-        pass
 
     for uid, data in game.night_actions_queue.items():
         player = game.get_player_by_id(uid)
         if not player or not player.alive:
             continue
-        action = data.get("action")
         target_id = data.get("target")
-        if action == "protect":
+        if data.get("action") == "protect":
             if mafia_kill_target and mafia_kill_target.user_id in protections and target_id == mafia_kill_target.user_id:
                 entries.append({"type": "protect", "target_id": target_id, "saved": True, "killer_id": uid})
 
@@ -424,9 +562,15 @@ async def resolve_night_actions(game):
 
     unique_deaths = []
     seen_ids = set()
-    for victim, cause in deaths:
-        if victim.user_id not in seen_ids:
-            seen_ids.add(victim.user_id)
-            unique_deaths.append((victim, cause))
+    for victim in deaths:
+        if victim is None:
+            continue
+        if isinstance(victim, tuple):
+            v, cause = victim
+        else:
+            v, cause = victim, "unknown"
+        if v.user_id not in seen_ids:
+            seen_ids.add(v.user_id)
+            unique_deaths.append((v, cause))
 
     return unique_deaths, janitor_target, entries
