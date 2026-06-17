@@ -41,6 +41,8 @@ def assign_roles(player_count, players):
         forced_role = player._forced_role
         if forced_role in roles:
             roles.remove(forced_role)
+        else:
+            roles.pop()
         player.role = forced_role
         assignments.append(player)
 

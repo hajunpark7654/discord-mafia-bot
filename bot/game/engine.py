@@ -296,7 +296,7 @@ class GameInstance:
         mafia_names = ", ".join(p.mention for p in self.mafia_team)
 
         for p in self.players:
-            if p.is_dummy:
+            if p.is_dummy and not p.is_bot:
                 continue
             emoji = ROLE_EMOJIS.get(p.role, "❓")
             desc = ROLE_DESCRIPTIONS.get(p.role, "No special ability.")

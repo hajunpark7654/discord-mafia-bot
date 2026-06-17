@@ -189,9 +189,10 @@ def setup_admin_commands(bot: commands.Bot):
         if not game or game.state != "lobby":
             await interaction.response.send_message("❌ No active lobby.", ephemeral=True)
             return
-        import time
         bot_id = 10000 + len(game.players)
         bot_player = Player(is_dummy=True, dummy_id=bot_id, is_bot=True, bot_owner_id=interaction.user.id)
+        bot_player.is_dummy = False
+        bot_player.member = interaction.guild.get_member(interaction.user.id)
         bot_player.name = f"Bot {len(game.players) + 1}"
         bot_player.mention = bot_player.name
         if role:

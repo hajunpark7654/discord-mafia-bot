@@ -103,7 +103,7 @@ async def collect_night_actions(game, bot):
 
 
 async def send_night_dm(player, game, bot):
-    if player.is_dummy or not player.member:
+    if (player.is_dummy and not player.is_bot) or not player.member:
         return
     role_name = player.role
     if role_name == "town":
@@ -145,7 +145,8 @@ async def build_target_select(player, game, prompt, targets, action_key):
 
     async def select_callback(interaction):
         if interaction.user.id != player.user_id:
-            return
+            if not (player.is_bot and interaction.user.id == player.bot_owner_id):
+                return
         target_id = int(select.values[0])
         game.night_actions_queue[player.user_id] = {"action": action_key, "target": target_id}
         await interaction.response.send_message(f"✅ Action recorded: {action_key}", ephemeral=True)
@@ -245,16 +246,15 @@ async def resolve_pirate_duel(pirate, target_id, game, bot):
 
     async def pirate_choice_cb(interaction, choice):
         if interaction.user.id != pirate.user_id:
-            return
+            if not (pirate.is_bot and interaction.user.id == pirate.bot_owner_id):
+                return
         pirate_choice[0] = choice
         pirate_done.set()
         await interaction.response.send_message(f"🏴‍☠️ You chose **{choice.title()}**!", ephemeral=True)
 
     async def target_choice_cb(interaction, choice):
         if interaction.user.id != target.user_id:
-            if target.is_bot and interaction.user.id == target.bot_owner_id:
-                pass
-            else:
+            if not (target.is_bot and interaction.user.id == target.bot_owner_id):
                 return
         target_choice[0] = choice
         target_done.set()
@@ -358,13 +358,15 @@ async def send_veteran_dm(player, game, bot):
 
     async def yes_callback(interaction):
         if interaction.user.id != player.user_id:
-            return
+            if not (player.is_bot and interaction.user.id == player.bot_owner_id):
+                return
         game.night_actions_queue[player.user_id] = {"action": "alert", "target": None, "alert": True}
         await interaction.response.send_message("🎖️ You are on alert tonight! Visitors will be killed.", ephemeral=True)
 
     async def no_callback(interaction):
         if interaction.user.id != player.user_id:
-            return
+            if not (player.is_bot and interaction.user.id == player.bot_owner_id):
+                return
         game.night_actions_queue[player.user_id] = {"action": "skip", "target": None}
         await interaction.response.send_message("You stay passive.", ephemeral=True)
 
@@ -412,7 +414,8 @@ async def send_medium_dm(player, game, bot):
 
         async def visit_cb(interaction):
             if interaction.user.id != player.user_id:
-                return
+                if not (player.is_bot and interaction.user.id == player.bot_owner_id):
+                    return
             game.night_actions_queue[player.user_id] = {"action": "medium", "target": None}
             await interaction.response.send_message("👻 You commune with the dead tonight.", ephemeral=True)
 
@@ -442,13 +445,15 @@ async def send_survivor_dm(player, game, bot):
 
     async def vest_cb(interaction):
         if interaction.user.id != player.user_id:
-            return
+            if not (player.is_bot and interaction.user.id == player.bot_owner_id):
+                return
         game.night_actions_queue[player.user_id] = {"action": "vest", "target": None}
         await interaction.response.send_message("🛡️ You put on your bulletproof vest.", ephemeral=True)
 
     async def no_cb(interaction):
         if interaction.user.id != player.user_id:
-            return
+            if not (player.is_bot and interaction.user.id == player.bot_owner_id):
+                return
         game.night_actions_queue[player.user_id] = {"action": "skip", "target": None}
         await interaction.response.send_message("You stay passive.", ephemeral=True)
 

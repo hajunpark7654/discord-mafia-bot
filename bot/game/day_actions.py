@@ -44,7 +44,7 @@ async def run_nomination_phase(game, bot):
 
 
 async def send_nomination_dm(player, game, bot):
-    if player.is_dummy or not player.member:
+    if (player.is_dummy and not player.is_bot) or not player.member:
         return
     targets = [p for p in game.alive_players if p.user_id != player.user_id]
     if not targets:
@@ -61,7 +61,8 @@ async def send_nomination_dm(player, game, bot):
 
     async def select_callback(interaction):
         if interaction.user.id != player.user_id:
-            return
+            if not (player.is_bot and interaction.user.id == player.bot_owner_id):
+                return
         target_id = int(select.values[0])
         if target_id not in game.nomination_counts.get(player.user_id, []):
             game.nomination_counts.setdefault(player.user_id, []).append(target_id)
@@ -98,7 +99,17 @@ async def run_trial_phase(game, bot, accused_player):
         await accused_player.member.send(f"🗣️ You have {DEFENSE_TIMER} seconds to state your defense in {channel.mention}.")
     except discord.Forbidden:
         pass
-    await asyncio.sleep(DEFENSE_TIMER)
+
+    defense_elapsed = 0
+    while defense_elapsed < DEFENSE_TIMER:
+        await asyncio.sleep(2)
+        defense_elapsed += 2
+        if getattr(game, '_force_advance', False):
+            setattr(game, '_force_advance', False)
+            break
+        if getattr(game, '_fast_forward', False):
+            setattr(game, '_fast_forward', False)
+            break
 
     vote_embed = discord.Embed(
         title=f"🗳️ Is {accused_player.mention} guilty? Check your DMs to vote!",
@@ -151,7 +162,7 @@ async def run_trial_phase(game, bot, accused_player):
 
 
 async def send_trial_vote_dm(player, game, bot, accused):
-    if player.is_dummy or not player.member:
+    if (player.is_dummy and not player.is_bot) or not player.member:
         return
     view = discord.ui.View()
     guilty_btn = discord.ui.Button(label="Guilty", style=discord.ButtonStyle.danger)
@@ -160,19 +171,22 @@ async def send_trial_vote_dm(player, game, bot, accused):
 
     async def guilty_cb(interaction):
         if interaction.user.id != player.user_id:
-            return
+            if not (player.is_bot and interaction.user.id == player.bot_owner_id):
+                return
         game.votes[player.user_id] = "guilty"
         await interaction.response.send_message("✅ Vote recorded: Guilty", ephemeral=True)
 
     async def innocent_cb(interaction):
         if interaction.user.id != player.user_id:
-            return
+            if not (player.is_bot and interaction.user.id == player.bot_owner_id):
+                return
         game.votes[player.user_id] = "innocent"
         await interaction.response.send_message("✅ Vote recorded: Innocent", ephemeral=True)
 
     async def abstain_cb(interaction):
         if interaction.user.id != player.user_id:
-            return
+            if not (player.is_bot and interaction.user.id == player.bot_owner_id):
+                return
         game.votes[player.user_id] = "abstain"
         await interaction.response.send_message("✅ Vote recorded: Abstain", ephemeral=True)
 
