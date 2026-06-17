@@ -415,7 +415,7 @@ class GameInstance:
 
         await self._toggle_mafia_chat(guild, open_chat=False)
 
-        await self._announce_morning(deaths, janitor_target, guild, bot)
+        await self._announce_morning(deaths, janitor_target, night_entries, guild, bot)
 
         self._check_neutral_wins(bot, guild)
 
@@ -434,15 +434,52 @@ class GameInstance:
                     else:
                         await self.mafia_den.set_permissions(member, overwrite=None)
 
-    async def _announce_morning(self, deaths, janitor_target, guild, bot):
+    async def _announce_morning(self, deaths, janitor_target, night_entries, guild, bot):
         self.day_number += 1
         alive_count = len(self.alive_players)
         msg = f"🌅 **Morning comes...**\n"
 
+        for entry in night_entries:
+            if entry.get("type") == "swap":
+                p1 = self.get_player_by_id(entry["player1_id"])
+                p2 = self.get_player_by_id(entry["player2_id"])
+                if p1 and p2:
+                    msg += f"🌀 **Teleporter** swapped positions of {p1.mention} and {p2.mention}!\n"
+            elif entry.get("type") == "protect" and entry.get("saved"):
+                target = self.get_player_by_id(entry["target_id"])
+                if target:
+                    if entry.get("vest"):
+                        msg += f"🛡️ {target.mention} was attacked but their **bulletproof vest** saved them!\n"
+                    else:
+                        msg += f"💉 {target.mention} was found severely injured, but the **Medic** was able to heal them!\n"
+
         actual_killer = None
         if deaths:
             for victim, cause in deaths:
-                if cause == "mafia_kill" and janitor_target == victim.user_id:
+                if cause == "duel":
+                    duel_entry = None
+                    for e in self.night_log.get(self.night_number, []):
+                        if e.get("type") == "duel":
+                            duel_entry = e
+                            break
+                    if duel_entry:
+                        wid = duel_entry.get("winner_id")
+                        lid = duel_entry.get("loser_id")
+                        l1 = duel_entry.get("loser1_id")
+                        l2 = duel_entry.get("loser2_id")
+                        if wid is None and l1 and l2:
+                            p1 = self.get_player_by_id(l1)
+                            p2 = self.get_player_by_id(l2)
+                            msg += f"🏴‍☠️ **Duel!** Both {p1.mention} and {p2.mention} failed to respond and died!\n"
+                        elif wid and lid:
+                            loser = self.get_player_by_id(lid)
+                            winner = self.get_player_by_id(wid)
+                            if loser and winner:
+                                if loser.role == "pirate":
+                                    msg += f"🏴‍☠️ {loser.mention} walked the plank! They were **Pirate**.\n"
+                                else:
+                                    msg += f"🏴‍☠️ {loser.mention} lost a duel to the **Pirate**! They were **{loser.role.replace('_', ' ').title()}**.\n"
+                elif cause == "mafia_kill" and janitor_target == victim.user_id:
                     message = random.choice(NIGHT_DEATH_MESSAGES).replace("{name}", victim.mention)
                     msg += f"💀 {message} *The body was never identified.*\n"
                     actual_killer = victim
@@ -456,17 +493,12 @@ class GameInstance:
                     msg += f"🌲 {message}\n"
                     msg += f"🏘️ They were **{victim.role.replace('_', ' ').title()}**.\n"
                     actual_killer = victim
-                elif cause == "duel":
-                    msg += f"🏴‍☠️ {victim.mention} was found dead from a duel!\n"
-                    msg += f"🏘️ They were **{victim.role.replace('_', ' ').title()}**.\n"
-                    actual_killer = victim
                 elif cause == "veteran":
                     msg += f"🎖️ {victim.mention} was found dead with defensive wounds.\n"
                     msg += f"🏘️ They were **{victim.role.replace('_', ' ').title()}**.\n"
                     actual_killer = victim
                 elif cause == "bounty_hunter":
-                    message = random.choice(NIGHT_DEATH_MESSAGES).replace("{name}", victim.mention)
-                    msg += f"🎯 {message}\n"
+                    msg += f"🎯 {victim.mention} was killed by the **Bounty Hunter**!\n"
                     msg += f"🏘️ They were **{victim.role.replace('_', ' ').title()}**.\n"
                     actual_killer = victim
         else:
@@ -474,6 +506,12 @@ class GameInstance:
 
         msg += f"\n☀️ **Day {self.day_number}** — {alive_count} players alive.\n"
         await self.town_square.send(msg)
+
+        for p in self.players:
+            if p.role == "bounty_hunter" and p.bh_exposed:
+                p.bh_exposed = False
+                await asyncio.sleep(1)
+                await self.town_square.send(f"🎯 {p.mention} was exposed as the **Bounty Hunter** — they killed the wrong target!")
 
         if actual_killer and random.random() < 0.5:
             if random.random() < 0.5:
@@ -568,6 +606,7 @@ class GameInstance:
                 pass
             if player.role == "bounty_hunter" and player.bh_killed and player.alive:
                 self._award_points_for_player(player, "bh_win")
+                asyncio.ensure_future(self.town_square.send(f"🎯 {player.mention} the **Bounty Hunter** eliminated their target and wins!"))
 
     def _check_mafia_promotion(self):
         killing_mafia = [p for p in self.living_mafia if is_killing_role(p.role)]
