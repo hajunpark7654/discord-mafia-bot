@@ -25,8 +25,7 @@ load_dotenv()
 bot = MafiaBot()
 scheduler = AsyncIOScheduler()
 card_spawner = CardSpawner(bot)
-
-PORT = int(os.getenv("PORT", 8080))
+bot.card_spawner = card_spawner
 
 PORT = int(os.getenv("PORT", 8080))
 

@@ -222,7 +222,8 @@ def setup_card_commands(bot: commands.Bot):
         set_config("card_spawn_channel", str(channel.id))
         set_config("card_spawn_enabled", "1")
         await interaction.response.send_message(f"✅ Cards will spawn in {channel.mention}.", ephemeral=True)
-        from main import card_spawner
-        card_spawner.spawn_channel_id = channel.id
-        await card_spawner.start()
+        spawner = getattr(bot, 'card_spawner', None)
+        if spawner:
+            spawner.spawn_channel_id = channel.id
+            await spawner.start()
 
