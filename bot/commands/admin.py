@@ -198,6 +198,16 @@ def setup_admin_commands(bot: commands.Bot):
         if role:
             bot_player._forced_role = normalize_role(role)
         game.players.append(bot_player)
+        if game.preshout_message:
+            try:
+                embed = discord.Embed(
+                    title=game.preshout_message.embeds[0].title,
+                    description=f"**{len(game.players)} player(s) have joined.**\n\nNeeds at least **{MIN_PLAYERS}** players. Click the button to join.",
+                    color=game.preshout_message.embeds[0].color,
+                )
+                await game.preshout_message.edit(embed=embed)
+            except:
+                pass
         await interaction.response.send_message(f"✅ Added {bot_player.name} to the game! ({len(game.players)} players)", ephemeral=True)
 
     @bot.tree.command(name="role", description="Force a role on a player during preshout.", guild=guild)
