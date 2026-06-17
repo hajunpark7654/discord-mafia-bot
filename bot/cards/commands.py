@@ -12,7 +12,7 @@ from bot.cards.models import generate_card, RARITY_COLORS
 from bot.cards.battle import run_battle
 
 
-def card_autocomplete(interaction: discord.Interaction, current: str):
+async def card_autocomplete(interaction: discord.Interaction, current: str):
     cards = get_player_cards(interaction.user.id)
     return [
         app_commands.Choice(name=f"#{c['id']} {c['card_name']} [{c['rarity']}]", value=str(c["id"]))
