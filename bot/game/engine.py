@@ -713,15 +713,23 @@ class GameInstance:
                                     health=card["health"],
                                     attack=card["attack"],
                                     speed=card["speed"],
-                                    h_mod=0, a_mod=0, s_mod=0,
-                                    is_shiny=False, is_mythical=False,
+                                    h_mod=card["health_mod"],
+                                    a_mod=card["attack_mod"],
+                                    s_mod=card["speed_mod"],
+                                    is_shiny=card["is_shiny"],
+                                    is_mythical=card["is_mythical"],
                                     rarity=card["rarity"],
                                     ovr=card["ovr"],
                                 )
                                 if not p.is_dummy:
                                     try:
                                         card_name = tpl["name"]
-                                        dm_msg = f"🎴 You received a **{card_name}** card ({card['rarity']}) as a Mafia reward!"
+                                        extra = ""
+                                        if card["is_shiny"]:
+                                            extra += " ✨"
+                                        if card["is_mythical"]:
+                                            extra += " 🌌"
+                                        dm_msg = f"🎴 You received a **{card_name}** card [{card['rarity']}]{extra} as a Mafia reward!"
                                         channel = guild.get_channel(self.channel_id)
                                         if channel:
                                             await channel.send(f"{p.mention} — {dm_msg}")

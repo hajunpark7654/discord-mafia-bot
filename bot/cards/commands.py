@@ -171,13 +171,13 @@ def setup_card_commands(bot: commands.Bot):
 
         templates = [t for t in get_all_templates() if t["name"].lower() == name.lower()]
         if not templates:
-            add_card_template(name)
+            add_card_template(name, health=health, attack=attack, speed=speed, rarity="F")
             templates = [t for t in get_all_templates() if t["name"].lower() == name.lower()]
         template = templates[0]
 
+        from bot.cards.models import RARITY_COLORS
+        rarity = template["rarity"]
         ovr = 2 * attack + health + speed
-        from bot.cards.models import ovr_to_rarity
-        rarity = ovr_to_rarity(ovr)
 
         cid = insert_card_instance(
             owner_id=player.id,
@@ -196,8 +196,8 @@ def setup_card_commands(bot: commands.Bot):
         await interaction.response.send_message(f"✅ Redeemed **{name}** for {player.mention}! (ID: {cid})", ephemeral=True)
 
     @bot.tree.command(name="card_add_template", description="[ADMIN] Add a new card template", guild=guild)
-    @app_commands.describe(name="Person's name", quote="Random quote/myth", image_url="Card image URL", catch_image_url="Spawn image URL")
-    async def card_add_template_cmd(interaction: discord.Interaction, name: str, quote: str = "", image_url: str = "", catch_image_url: str = ""):
+    @app_commands.describe(name="Person's name", health="Base HP", attack="Base ATK", speed="Base SPD", rarity="S/A/B/C/D/F", quote="Random quote/myth", image_url="Card image URL", catch_image_url="Spawn image URL")
+    async def card_add_template_cmd(interaction: discord.Interaction, name: str, health: int = 1000, attack: int = 500, speed: int = 200, rarity: str = "F", quote: str = "", image_url: str = "", catch_image_url: str = ""):
         if not is_admin(interaction):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
@@ -205,8 +205,12 @@ def setup_card_commands(bot: commands.Bot):
         if existing:
             await interaction.response.send_message("❌ Template already exists.", ephemeral=True)
             return
-        add_card_template(name, image_url, catch_image_url, quote)
-        await interaction.response.send_message(f"✅ Added card template: **{name}**", ephemeral=True)
+        rarity = rarity.upper()
+        if rarity not in ("S", "A", "B", "C", "D", "F"):
+            await interaction.response.send_message("❌ Rarity must be S, A, B, C, D, or F.", ephemeral=True)
+            return
+        add_card_template(name, health, attack, speed, rarity, image_url, catch_image_url, quote)
+        await interaction.response.send_message(f"✅ Added card template: **{name}** [{rarity}] HP:{health} ATK:{attack} SPD:{speed}", ephemeral=True)
 
     @bot.tree.command(name="set_spawn", description="[ADMIN] Set the card spawn channel", guild=guild)
     @app_commands.describe(channel="Channel to spawn cards in")

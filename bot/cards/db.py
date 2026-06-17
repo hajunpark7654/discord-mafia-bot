@@ -18,6 +18,10 @@ def init_card_tables():
         CREATE TABLE IF NOT EXISTS card_templates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
+            health INTEGER DEFAULT 1000,
+            attack INTEGER DEFAULT 500,
+            speed INTEGER DEFAULT 200,
+            rarity TEXT DEFAULT 'F',
             image_url TEXT DEFAULT '',
             catch_image_url TEXT DEFAULT '',
             quote TEXT DEFAULT ''
@@ -53,11 +57,11 @@ def init_card_tables():
     conn.close()
 
 
-def add_card_template(name, image_url="", catch_image_url="", quote=""):
+def add_card_template(name, health=1000, attack=500, speed=200, rarity="F", image_url="", catch_image_url="", quote=""):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("INSERT OR IGNORE INTO card_templates (name, image_url, catch_image_url, quote) VALUES (?, ?, ?, ?)",
-              (name, image_url, catch_image_url, quote))
+    c.execute("INSERT OR IGNORE INTO card_templates (name, health, attack, speed, rarity, image_url, catch_image_url, quote) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+              (name, health, attack, speed, rarity, image_url, catch_image_url, quote))
     conn.commit()
     conn.close()
 
