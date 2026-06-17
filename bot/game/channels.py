@@ -37,7 +37,6 @@ async def setup_game_channels(game, guild):
     dead_overwrites = {
         guild.default_role: overwrites_everyone,
         dead_role: PermissionOverwrite(read_messages=True, send_messages=True),
-        player_role: PermissionOverwrite(read_messages=True, send_messages=False),
     }
     dead_chat = await category.create_text_channel(DEAD_CHAT_CHANNEL, overwrites=dead_overwrites)
     game.dead_chat = dead_chat

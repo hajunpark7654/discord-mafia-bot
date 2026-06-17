@@ -2,12 +2,14 @@ from discord import Member
 
 
 class Player:
-    def __init__(self, member: Member = None, is_dummy=False, dummy_id=0):
+    def __init__(self, member: Member = None, is_dummy=False, dummy_id=0, is_bot=False, bot_owner_id=None):
         self.user_id = dummy_id if is_dummy else member.id
         self.member = member
         self.name = f"Dummy {dummy_id}" if is_dummy else member.display_name
         self.mention = f"<@{dummy_id}>" if is_dummy else member.mention
         self.is_dummy = is_dummy
+        self.is_bot = is_bot
+        self.bot_owner_id = bot_owner_id
         self.role = None
         self.alive = True
         self.original_roles = []

@@ -8,7 +8,7 @@ from config import (
     ADMIN_USER_ID, PRESHOUT_CHANNEL_ID, NOMINATIONS_REQUIRED,
     PRESHOUT_AUTO_CANCEL_IDLE, PRESHOUT_AUTO_CANCEL_JOINED,
     TEAMS, TEAM_DISPLAY_ORDER, FACTION_MAFIA, FACTION_TOWN, FACTION_NEUTRAL,
-    NIGHT_DEATH_MESSAGES, VOTE_OUT_MESSAGES,
+    NIGHT_DEATH_MESSAGES, VOTE_OUT_MESSAGES, ACCUSATION_MESSAGES,
 )
 from bot.game.player import Player
 from bot.game.role import assign_roles, get_role_team, get_role_faction, is_killing_role, get_points_key
@@ -90,6 +90,7 @@ class GameInstance:
         self.join_button_active = False
         self._force_advance = False
         self._force_day = False
+        self._fast_forward = False
         self.point_bonus = False
         self.game_id = id(self)
         self._cancel_event = asyncio.Event()
@@ -357,6 +358,7 @@ class GameInstance:
 
     async def _night_phase(self, bot):
         self._force_advance = False
+        self._fast_forward = False
         guild = bot.get_guild(self.guild_id)
         self.night_number += 1
 
@@ -369,7 +371,7 @@ class GameInstance:
             msg += "\n(Special roles: check your DMs)"
         await self.town_square.send(msg)
 
-        await collect_night_actions(self, bot)
+        duel_deaths = await collect_night_actions(self, bot)
         if self._cancel_token.is_set():
             return
 
@@ -389,6 +391,10 @@ class GameInstance:
         deaths, janitor_target, night_entries = await resolve_night_actions(self)
         self.night_log[self.night_number].extend(night_entries)
         deaths = [d for d in deaths if d[0].alive]
+
+        for dd in duel_deaths:
+            if dd.alive:
+                deaths.append((dd, "duel"))
 
         if medium_player:
             from bot.game.channels import remove_medium_dead_access
@@ -424,34 +430,51 @@ class GameInstance:
         alive_count = len(self.alive_players)
         msg = f"🌅 **Morning comes...**\n"
 
+        actual_killer = None
         if deaths:
             for victim, cause in deaths:
                 if cause == "mafia_kill" and janitor_target == victim.user_id:
                     message = random.choice(NIGHT_DEATH_MESSAGES).replace("{name}", victim.mention)
                     msg += f"💀 {message} *The body was never identified.*\n"
+                    actual_killer = victim
                 elif cause == "mafia_kill":
                     message = random.choice(NIGHT_DEATH_MESSAGES).replace("{name}", victim.mention)
                     msg += f"💀 {message}\n"
                     msg += f"🏘️ They were **{victim.role.replace('_', ' ').title()}**.\n"
+                    actual_killer = victim
                 elif cause == "ambush":
                     message = random.choice(NIGHT_DEATH_MESSAGES).replace("{name}", victim.mention)
                     msg += f"🌲 {message}\n"
                     msg += f"🏘️ They were **{victim.role.replace('_', ' ').title()}**.\n"
+                    actual_killer = victim
                 elif cause == "duel":
                     msg += f"🏴‍☠️ {victim.mention} was found dead from a duel!\n"
                     msg += f"🏘️ They were **{victim.role.replace('_', ' ').title()}**.\n"
+                    actual_killer = victim
                 elif cause == "veteran":
                     msg += f"🎖️ {victim.mention} was found dead with defensive wounds.\n"
                     msg += f"🏘️ They were **{victim.role.replace('_', ' ').title()}**.\n"
+                    actual_killer = victim
                 elif cause == "bounty_hunter":
                     message = random.choice(NIGHT_DEATH_MESSAGES).replace("{name}", victim.mention)
                     msg += f"🎯 {message}\n"
                     msg += f"🏘️ They were **{victim.role.replace('_', ' ').title()}**.\n"
+                    actual_killer = victim
         else:
             msg += "☀️ Nobody died last night.\n"
 
-        msg += f"\n☀️ **Day {self.day_number}** — {alive_count} players alive."
+        msg += f"\n☀️ **Day {self.day_number}** — {alive_count} players alive.\n"
         await self.town_square.send(msg)
+
+        if actual_killer and random.random() < 0.5:
+            if random.random() < 0.5:
+                suspect = actual_killer
+            else:
+                suspects = [p for p in self.alive_players if p.user_id != actual_killer.user_id]
+                suspect = random.choice(suspects) if suspects else actual_killer
+            acc_msg = random.choice(ACCUSATION_MESSAGES).replace("{suspect}", suspect.mention).replace("{victim}", actual_killer.mention)
+            await asyncio.sleep(2)
+            await self.town_square.send(f"👀 {acc_msg}")
 
     async def _kill_player(self, guild, player):
         player.alive = False
@@ -468,6 +491,7 @@ class GameInstance:
     async def _day_phase(self, bot):
         self._force_advance = False
         self._force_day = False
+        self._fast_forward = False
 
         msg = f"☀️ **Day {self.day_number}** — Nominate someone for trial via your DMs! ({NOMINATIONS_REQUIRED}+ nomination(s) required.)"
         await self.town_square.send(msg)

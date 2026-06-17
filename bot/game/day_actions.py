@@ -20,6 +20,9 @@ async def run_nomination_phase(game, bot):
         if getattr(game, '_force_advance', False):
             setattr(game, '_force_advance', False)
             break
+        if getattr(game, '_fast_forward', False):
+            setattr(game, '_fast_forward', False)
+            break
         if getattr(game, '_cancel_token', None) and game._cancel_token.is_set():
             break
 
@@ -114,6 +117,9 @@ async def run_trial_phase(game, bot, accused_player):
         elapsed += check_interval
         if getattr(game, '_force_advance', False):
             setattr(game, '_force_advance', False)
+            break
+        if getattr(game, '_fast_forward', False):
+            setattr(game, '_fast_forward', False)
             break
         if getattr(game, '_cancel_token', None) and game._cancel_token.is_set():
             break

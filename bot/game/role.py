@@ -31,21 +31,33 @@ def pick_roles_unique(pool, weights, count):
 
 
 def assign_roles(player_count, players):
-    roles = generate_role_list(player_count)
-    random.shuffle(players)
+    forced = [p for p in players if hasattr(p, '_forced_role') and p._forced_role]
+    free = [p for p in players if not hasattr(p, '_forced_role') or not p._forced_role]
+
+    forced_role_names = [p._forced_role for p in forced]
+
+    roles = generate_role_list(player_count, exclude=forced_role_names)
+
     assignments = []
-    for i, player in enumerate(players):
+    for player in forced:
+        player.role = player._forced_role
+        assignments.append(player)
+        roles.remove(player._forced_role)
+
+    random.shuffle(free)
+    for i, player in enumerate(free):
         role_name = roles[i]
         player.role = role_name
         assignments.append(player)
 
-    faction_map = {"mafia_killing": FACTION_MAFIA, "mafia_support": FACTION_MAFIA}
     mafia_team = [p for p in assignments if get_role_faction(p.role) == FACTION_MAFIA]
 
     return assignments, mafia_team
 
 
-def generate_role_list(player_count):
+def generate_role_list(player_count, exclude=None):
+    if exclude is None:
+        exclude = []
     if player_count < 5:
         return []
 
@@ -57,31 +69,44 @@ def generate_role_list(player_count):
     roles = []
 
     if dist["mafia_killing"] > 0:
-        killing = pick_roles_unique(MAFIA_KILLING_POOL, MAFIA_KILLING_WEIGHTS, dist["mafia_killing"])
+        pool = [r for r in MAFIA_KILLING_POOL if r not in exclude]
+        weights = [MAFIA_KILLING_WEIGHTS[MAFIA_KILLING_POOL.index(r)] for r in pool]
+        killing = pick_roles_unique(pool, weights, dist["mafia_killing"]) if pool else []
         roles.extend(killing)
 
     if dist["mafia_support"] > 0:
-        support = pick_roles_unique(MAFIA_SUPPORT_POOL, MAFIA_SUPPORT_WEIGHTS, dist["mafia_support"])
+        pool = [r for r in MAFIA_SUPPORT_POOL if r not in exclude]
+        weights = [MAFIA_SUPPORT_WEIGHTS[MAFIA_SUPPORT_POOL.index(r)] for r in pool]
+        support = pick_roles_unique(pool, weights, dist["mafia_support"]) if pool else []
         roles.extend(support)
 
     if dist["neutral"] > 0:
-        neutral_chaos_count = dist["neutral"] // 2 + (1 if dist["neutral"] % 2 == 1 and random.random() < 0.5 else 0)
-        neutral_lawful_count = dist["neutral"] - neutral_chaos_count
+        neutral_pool = NEUTRAL_CHAOTIC_POOL + NEUTRAL_LAWFUL_POOL
+        avail = [r for r in neutral_pool if r not in exclude]
+        if avail:
+            neutral_chaos_count = dist["neutral"] // 2 + (1 if dist["neutral"] % 2 == 1 and random.random() < 0.5 else 0)
+            neutral_lawful_count = dist["neutral"] - neutral_chaos_count
+            chaotic_avail = [r for r in NEUTRAL_CHAOTIC_POOL if r in avail]
+            lawful_avail = [r for r in NEUTRAL_LAWFUL_POOL if r in avail]
+            neutral_roles = []
+            if chaotic_avail:
+                neutral_roles.extend(random.sample(chaotic_avail, min(neutral_chaos_count, len(chaotic_avail))))
+            if lawful_avail:
+                neutral_roles.extend(random.sample(lawful_avail, min(neutral_lawful_count, len(lawful_avail))))
+            random.shuffle(neutral_roles)
+            roles.extend(neutral_roles)
 
-        neutral_roles = []
-        neutral_roles.extend(random.sample(NEUTRAL_CHAOTIC_POOL, min(neutral_chaos_count, len(NEUTRAL_CHAOTIC_POOL))))
-        neutral_roles.extend(random.sample(NEUTRAL_LAWFUL_POOL, min(neutral_lawful_count, len(NEUTRAL_LAWFUL_POOL))))
-        random.shuffle(neutral_roles)
-        roles.extend(neutral_roles)
-
-    roles.append("doctor")
-    if dist["sheriff"] > 0:
+    if "doctor" not in exclude:
+        roles.append("doctor")
+    if dist["sheriff"] > 0 and "sheriff" not in exclude:
         roles.append("sheriff")
 
     roles.extend(["town"] * dist["town"])
 
     if dist["town_support"] > 0:
-        ts = pick_roles_unique(TOWN_SUPPORT_POOL, TOWN_SUPPORT_WEIGHTS, dist["town_support"])
+        pool = [r for r in TOWN_SUPPORT_POOL if r not in exclude]
+        weights = [TOWN_SUPPORT_WEIGHTS[TOWN_SUPPORT_POOL.index(r)] for r in pool]
+        ts = pick_roles_unique(pool, weights, dist["town_support"]) if pool else []
         roles.extend(ts)
 
     random.shuffle(roles)

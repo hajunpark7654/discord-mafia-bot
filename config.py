@@ -136,6 +136,15 @@ NEUTRAL_LAWFUL_POOL = ["jester", "veteran", "survivor"]
 TOWN_SUPPORT_POOL = ["lawyer", "psychic", "lookout", "investigator", "medium"]
 TOWN_SUPPORT_WEIGHTS = [30, 25, 20, 15, 10]
 
+ACCUSATION_MESSAGES = [
+    "{suspect} was found near the place of the murder last night...",
+    "{suspect} seemed abnormally aware of {victim}'s death.. Suspicious.",
+    "{suspect} was seen hurrying away in the dead of night... Surely it's nothing though?",
+    "Several townsfolk reported seeing {suspect} near {victim}'s house last night.",
+    "{suspect} was covered in what appears to be.. ketchup? Very suspicious.",
+    "Nobody saw {suspect} at the town gathering last night. Where were they?",
+]
+
 NIGHT_DEATH_MESSAGES = [
     "{name}'s remains were found scattered in the field.",
     "{name} was found armless, hanging from a tree.",

@@ -39,21 +39,67 @@ async def collect_night_actions(game, bot):
                 if game.night_actions_queue[player.user_id]["action"] is None:
                     game.night_actions_queue[player.user_id] = {"action": "skip", "target": None}
 
-    timeout = 10 if getattr(game, 'test_mode', False) else (300 if game.is_auto else 600)
+    role_actions = set()
+    for p in game.alive_players:
+        if p.role and p.role != "town":
+            role_actions.add(p.user_id)
+
+    no_timer = game.is_hosted and not game.is_auto and not game.test_mode
+    timeout = 10 if getattr(game, 'test_mode', False) else (300 if game.is_auto else None if no_timer else 600)
     check_interval = 5
     elapsed = 0
-    while elapsed < timeout:
-        await asyncio.sleep(min(check_interval, timeout - elapsed))
+
+    while True:
+        await asyncio.sleep(check_interval)
         elapsed += check_interval
+
         if getattr(game, '_force_advance', False):
             setattr(game, '_force_advance', False)
             break
+        if getattr(game, '_fast_forward', False):
+            setattr(game, '_fast_forward', False)
+            break
         if getattr(game, '_cancel_token', None) and game._cancel_token.is_set():
+            break
+
+        all_done = True
+        for uid in role_actions:
+            data = game.night_actions_queue.get(uid, {})
+            if data.get("action") is None:
+                all_done = False
+                break
+        if all_done:
+            break
+
+        if timeout and elapsed >= timeout:
             break
 
     for uid, data in game.night_actions_queue.items():
         if data["action"] is None:
             data["action"] = "skip"
+
+    has_pirate = any(
+        p.role == "pirate" and p.alive and game.night_actions_queue.get(p.user_id, {}).get("action") == "duel"
+        for p in game.alive_players
+    )
+
+    duel_deaths = []
+    if has_pirate:
+        for uid, data in list(game.night_actions_queue.items()):
+            if data.get("action") == "duel":
+                pirate = game.get_player_by_id(uid)
+                if pirate and pirate.alive:
+                    await resolve_pirate_duel(pirate, data.get("target"), game, bot)
+
+    for entry in game.night_log.get(game.night_number, []):
+        if entry.get("type") == "duel":
+            for lid in ("loser_id", "loser1_id", "loser2_id"):
+                loser_id = entry.get(lid)
+                if loser_id:
+                    lp = game.get_player_by_id(loser_id)
+                    if lp:
+                        duel_deaths.append(lp)
+    return duel_deaths
 
 
 async def send_night_dm(player, game, bot):
@@ -184,6 +230,116 @@ async def send_pirate_dm(player, game, bot):
     embed, view = await build_target_select(player, game, "🏴‍☠️ Choose someone to duel:", targets, "duel")
     if embed:
         await send_dm(player, embed, view)
+
+
+async def resolve_pirate_duel(pirate, target_id, game, bot):
+    target = game.get_player_by_id(target_id)
+    if not target or not target.alive:
+        return
+
+    moves = {"plunder": "scissors", "bash": "rock", "sidestep": "paper"}
+    pirate_choice = [None]
+    target_choice = [None]
+    pirate_done = asyncio.Event()
+    target_done = asyncio.Event()
+
+    async def pirate_choice_cb(interaction, choice):
+        if interaction.user.id != pirate.user_id:
+            return
+        pirate_choice[0] = choice
+        pirate_done.set()
+        await interaction.response.send_message(f"🏴‍☠️ You chose **{choice.title()}**!", ephemeral=True)
+
+    async def target_choice_cb(interaction, choice):
+        if interaction.user.id != target.user_id:
+            if target.is_bot and interaction.user.id == target.bot_owner_id:
+                pass
+            else:
+                return
+        target_choice[0] = choice
+        target_done.set()
+        await interaction.response.send_message(f"You chose **{choice.title()}**!", ephemeral=True)
+
+    p_view = discord.ui.View()
+    for name, real in moves.items():
+        btn = discord.ui.Button(label=name.title(), style=discord.ButtonStyle.danger)
+        btn.callback = lambda i, c=real: asyncio.ensure_future(pirate_choice_cb(i, c))
+        p_view.add_item(btn)
+
+    t_view = discord.ui.View()
+    for name, real in moves.items():
+        btn = discord.ui.Button(label=name.title(), style=discord.ButtonStyle.primary)
+        btn.callback = lambda i, c=real: asyncio.ensure_future(target_choice_cb(i, c))
+        t_view.add_item(btn)
+
+    p_embed = discord.Embed(
+        title="🏴‍☠️ Duel!",
+        description=f"You challenged {target.mention}! Choose your move (30s):",
+        color=discord.Color.dark_red()
+    )
+    t_embed = discord.Embed(
+        title="🏴‍☠️ You've been challenged!",
+        description=f"{pirate.mention} challenges you to a duel! Choose your move (30s):",
+        color=discord.Color.dark_red()
+    )
+
+    if not pirate.is_dummy:
+        try:
+            await pirate.member.send(embed=p_embed, view=p_view)
+        except:
+            pass
+    if not target.is_dummy:
+        try:
+            await target.member.send(embed=t_embed, view=t_view)
+        except:
+            pass
+
+    try:
+        await asyncio.wait_for(pirate_done.wait(), timeout=30)
+    except asyncio.TimeoutError:
+        pass
+    try:
+        await asyncio.wait_for(target_done.wait(), timeout=30)
+    except asyncio.TimeoutError:
+        pass
+
+    pc = pirate_choice[0]
+    tc = target_choice[0]
+
+    if pc is None and tc is None:
+        pirate.alive = False
+        target.alive = False
+        game.night_actions_queue[pirate.user_id]["pirate_lost"] = True
+        game.night_actions_queue[target.user_id]["cancelled_by_duel"] = True
+        game.night_log[game.night_number].append({"type": "duel", "winner_id": None, "loser1_id": pirate.user_id, "loser2_id": target.user_id})
+        return
+    elif pc is None:
+        pirate.alive = False
+        game.night_actions_queue[pirate.user_id]["pirate_lost"] = True
+        game.night_log[game.night_number].append({"type": "duel", "winner_id": target.user_id, "loser_id": pirate.user_id})
+        return
+    elif tc is None:
+        target.alive = False
+        game.night_actions_queue[target.user_id]["cancelled_by_duel"] = True
+        game.night_log[game.night_number].append({"type": "duel", "winner_id": pirate.user_id, "loser_id": target.user_id})
+        pirate.duel_wins += 1
+        return
+
+    beats = {"rock": "scissors", "scissors": "paper", "paper": "rock"}
+    if pc == tc:
+        pirate_choice[0] = None
+        target_choice[0] = None
+        return await resolve_pirate_duel(pirate, target_id, game, bot)
+
+    if beats[pc] == tc:
+        target.alive = False
+        game.night_actions_queue[target.user_id]["cancelled_by_duel"] = True
+        game.night_log[game.night_number].append({"type": "duel", "winner_id": pirate.user_id, "loser_id": target.user_id})
+        pirate.duel_wins += 1
+    else:
+        pirate.alive = False
+        game.night_actions_queue[pirate.user_id]["pirate_lost"] = True
+        game.night_log[game.night_number].append({"type": "duel", "winner_id": target.user_id, "loser_id": pirate.user_id})
 
 
 async def send_teleporter_dm(player, game, bot):
@@ -380,6 +536,11 @@ async def resolve_night_actions(game):
                 entries.append({"type": "veteran_kill", "target_id": v.user_id})
 
     for uid, data in game.night_actions_queue.items():
+        if data.get("cancelled_by_duel"):
+            if data.get("target") is not None:
+                entries.append({"type": "roleblock", "target_id": uid})
+            continue
+
         player = game.get_player_by_id(uid)
         if not player or not player.alive:
             continue
@@ -387,7 +548,7 @@ async def resolve_night_actions(game):
         target_id = data.get("target")
 
         if uid in roleblocks:
-            if action in ("kill", "protect", "investigate", "investigate2", "consigliere", "watch", "duel", "swap1", "frame", "bh_kill", "ambush"):
+            if action in ("kill", "protect", "investigate", "investigate2", "consigliere", "watch", "swap1", "frame", "bh_kill", "ambush"):
                 entries.append({"type": "roleblock", "target_id": uid})
                 continue
             continue
@@ -412,7 +573,6 @@ async def resolve_night_actions(game):
         elif action == "investigate2":
             target = game.get_player_by_id(target_id)
             if target:
-                from bot.game.role import get_role_team as grt
                 from config import ROLE_REGISTRY as rr
                 all_roles = list(rr.keys())
                 possible = [r for r in all_roles if r != target.role and r != "town"]
@@ -445,17 +605,6 @@ async def resolve_night_actions(game):
                 await player.member.send(f"👁️ **Lookout:** You saw {visitor_names} visit your target last night.")
             except discord.Forbidden:
                 pass
-        elif action == "duel":
-            target = game.get_player_by_id(target_id)
-            if target and target.alive:
-                winner = resolve_rps(player, target)
-                if winner == player:
-                    deaths.append((target, "duel"))
-                    player.duel_wins += 1
-                    entries.append({"type": "duel", "winner_id": player.user_id, "loser_id": target.user_id})
-                else:
-                    deaths.append((player, "duel"))
-                    entries.append({"type": "duel", "winner_id": target.user_id, "loser_id": player.user_id})
         elif action == "swap1":
             first_player_id = uid
             second_player_id = target_id

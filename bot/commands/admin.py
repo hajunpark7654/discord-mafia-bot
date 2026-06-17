@@ -4,11 +4,24 @@ from discord import app_commands
 from discord.ext import commands
 from config import (
     ADMIN_USER_ID, PRESHOUT_CHANNEL_ID, MIN_PLAYERS,
-    GUILD_ID, POINTS, ROLE_EMOJIS,
+    GUILD_ID, POINTS, ROLE_EMOJIS, ROLE_REGISTRY,
 )
 from bot.game.engine import GameManager
+from bot.game.player import Player
 from bot.database.db import add_points, deduct_points, get_leaderboard, get_points, set_config, get_config, wipe_all_points, get_top_player
 from bot.client import is_admin
+
+
+def normalize_role(role_str):
+    return role_str.lower().strip().replace(" ", "_").replace("-", "_")
+
+
+async def role_autocomplete(interaction: discord.Interaction, current: str):
+    return [
+        app_commands.Choice(name=r.replace("_", " ").title(), value=r)
+        for r in ROLE_REGISTRY.keys()
+        if current.lower() in r.lower()
+    ][:25]
 
 
 def setup_admin_commands(bot: commands.Bot):
@@ -64,7 +77,8 @@ def setup_admin_commands(bot: commands.Bot):
         await interaction.response.send_message("✅ Preshout posted!", ephemeral=True)
 
     @bot.tree.command(name="test", description="Run a test game with a chosen role.", guild=guild)
-    @app_commands.describe(role="Optional role to assign yourself (e.g. mafia, doctor, sheriff)")
+    @app_commands.describe(role="Optional role to assign yourself")
+    @app_commands.autocomplete(role=role_autocomplete)
     async def test_game(interaction: discord.Interaction, role: str = None):
         if not is_admin(interaction):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
@@ -77,7 +91,7 @@ def setup_admin_commands(bot: commands.Bot):
 
         game = manager.create_game(interaction.guild_id, interaction.channel_id, game_type="Mafia")
         if role:
-            game._test_role = role.lower().strip()
+            game._test_role = normalize_role(role)
         await interaction.response.send_message("🧪 Starting test game...", ephemeral=True)
         asyncio.create_task(game.start_test_game(bot, interaction.user))
 
@@ -163,6 +177,51 @@ def setup_admin_commands(bot: commands.Bot):
         manager.clear_last_cleanup()
         await interaction.followup.send(f"✅ Cleaned up {deleted} items.", ephemeral=True)
 
+    @bot.tree.command(name="bot", description="Add a bot-controlled player to the lobby.", guild=guild)
+    @app_commands.describe(role="Role to assign (leave blank for random)")
+    @app_commands.autocomplete(role=role_autocomplete)
+    async def bot_add(interaction: discord.Interaction, role: str = None):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+        manager = GameManager.get_instance()
+        game = manager.get_game(interaction.guild_id)
+        if not game or game.state != "lobby":
+            await interaction.response.send_message("❌ No active lobby.", ephemeral=True)
+            return
+        import time
+        bot_id = 10000 + len(game.players)
+        bot_player = Player(is_dummy=True, dummy_id=bot_id, is_bot=True, bot_owner_id=interaction.user.id)
+        bot_player.name = f"Bot {len(game.players) + 1}"
+        bot_player.mention = bot_player.name
+        if role:
+            bot_player._forced_role = normalize_role(role)
+        game.players.append(bot_player)
+        await interaction.response.send_message(f"✅ Added {bot_player.name} to the game! ({len(game.players)} players)", ephemeral=True)
+
+    @bot.tree.command(name="role", description="Force a role on a player during preshout.", guild=guild)
+    @app_commands.describe(player="The player", role="Role to assign")
+    @app_commands.autocomplete(role=role_autocomplete)
+    async def set_role(interaction: discord.Interaction, player: discord.User, role: str):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+        manager = GameManager.get_instance()
+        game = manager.get_game(interaction.guild_id)
+        if not game or game.state != "lobby":
+            await interaction.response.send_message("❌ No active lobby.", ephemeral=True)
+            return
+        r = normalize_role(role)
+        if r not in ROLE_REGISTRY:
+            await interaction.response.send_message(f"❌ Unknown role: {role}", ephemeral=True)
+            return
+        existing = game.get_player_by_id(player.id)
+        if not existing:
+            await interaction.response.send_message("❌ Player not in lobby.", ephemeral=True)
+            return
+        existing._forced_role = r
+        await interaction.response.send_message(f"✅ {player.mention} will be forced as **{r.replace('_', ' ').title()}** at game start.", ephemeral=True)
+
     @bot.tree.command(name="end", description="Cancel a preshout or end an active game.", guild=guild)
     async def end_game(interaction: discord.Interaction):
         if not is_admin(interaction):
@@ -189,45 +248,19 @@ def setup_admin_commands(bot: commands.Bot):
                 GameManager.get_instance().remove_game(interaction.guild_id)
                 await interaction.followup.send(f"⚠️ Game force-cleaned.", ephemeral=True)
 
-    @bot.tree.command(name="force_night", description="Force advance to night phase.", guild=guild)
-    async def force_night(interaction: discord.Interaction):
+    @bot.tree.command(name="fastforward", description="Skip to next phase (nomination → trial → night).", guild=guild)
+    async def fastforward(interaction: discord.Interaction):
         if not is_admin(interaction):
-            await interaction.response.send_message("❌ Only the admin can use this command.", ephemeral=True)
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
         manager = GameManager.get_instance()
         game = manager.get_game(interaction.guild_id)
         if not game:
             await interaction.response.send_message("❌ No active game.", ephemeral=True)
             return
+        game._fast_forward = True
         game._force_advance = True
-        await interaction.response.send_message("⏩ Advancing to night...", ephemeral=True)
-
-    @bot.tree.command(name="force_day", description="Force advance to day phase.", guild=guild)
-    async def force_day(interaction: discord.Interaction):
-        if not is_admin(interaction):
-            await interaction.response.send_message("❌ Only the admin can use this command.", ephemeral=True)
-            return
-        manager = GameManager.get_instance()
-        game = manager.get_game(interaction.guild_id)
-        if not game:
-            await interaction.response.send_message("❌ No active game.", ephemeral=True)
-            return
-        game._force_advance = True
-        game._force_day = True
-        await interaction.response.send_message("⏩ Advancing to day...", ephemeral=True)
-
-    @bot.tree.command(name="force_vote", description="Force close voting phase.", guild=guild)
-    async def force_vote(interaction: discord.Interaction):
-        if not is_admin(interaction):
-            await interaction.response.send_message("❌ Only the admin can use this command.", ephemeral=True)
-            return
-        manager = GameManager.get_instance()
-        game = manager.get_game(interaction.guild_id)
-        if not game:
-            await interaction.response.send_message("❌ No active game.", ephemeral=True)
-            return
-        game._force_advance = True
-        await interaction.response.send_message("⏩ Closing votes...", ephemeral=True)
+        await interaction.response.send_message("⏩ Fast-forwarding...", ephemeral=True)
 
     @bot.tree.command(name="autohost", description="Toggle random auto-hosted games.", guild=guild)
     @app_commands.describe(action="'toggle' to enable/disable")
