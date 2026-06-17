@@ -700,6 +700,38 @@ class GameInstance:
                         elif p.role == "survivor":
                             self._award_points_for_player(p, "survivor_win")
 
+                    if random.random() < 0.20:
+                        try:
+                            from bot.cards.db import get_random_template, insert_card_instance
+                            from bot.cards.models import generate_card
+                            tpl = get_random_template()
+                            if tpl:
+                                card = generate_card(tpl, from_mafia=True)
+                                cid = insert_card_instance(
+                                    owner_id=p.user_id,
+                                    template_id=card["template_id"],
+                                    health=card["health"],
+                                    attack=card["attack"],
+                                    speed=card["speed"],
+                                    h_mod=0, a_mod=0, s_mod=0,
+                                    is_shiny=False, is_mythical=False,
+                                    rarity=card["rarity"],
+                                    ovr=card["ovr"],
+                                )
+                                if not p.is_dummy:
+                                    try:
+                                        card_name = tpl["name"]
+                                        dm_msg = f"🎴 You received a **{card_name}** card ({card['rarity']}) as a Mafia reward!"
+                                        channel = guild.get_channel(self.channel_id)
+                                        if channel:
+                                            await channel.send(f"{p.mention} — {dm_msg}")
+                                        else:
+                                            await p.member.send(dm_msg)
+                                    except:
+                                        pass
+                        except Exception as e:
+                            print(f"Card reward error: {e}")
+
                 for p in self.players:
                     if p.points_earned == 0:
                         add_points(p.user_id, POINTS["participation"])

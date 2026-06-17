@@ -10,7 +10,10 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot.client import MafiaBot
 from bot.database.db import init_db, get_config, set_config
+from bot.cards.db import init_card_tables
+from bot.cards.spawner import CardSpawner
 from bot.commands.admin import setup_admin_commands
+from bot.cards.commands import setup_card_commands
 from config import (
     GUILD_ID, PRESHOUT_CHANNEL_ID, MIN_PLAYERS,
     RANDOM_AUTO_MIN_INTERVAL, RANDOM_AUTO_MAX_INTERVAL,
@@ -21,6 +24,9 @@ load_dotenv()
 
 bot = MafiaBot()
 scheduler = AsyncIOScheduler()
+card_spawner = CardSpawner(bot)
+
+PORT = int(os.getenv("PORT", 8080))
 
 PORT = int(os.getenv("PORT", 8080))
 
@@ -106,6 +112,7 @@ async def try_schedule_auto():
 async def on_ready():
     print(f"Bot ready: {bot.user}")
     init_db()
+    init_card_tables()
 
     if hasattr(bot, "health_server_coro") and bot.health_server_coro:
         await bot.health_server_coro()
@@ -120,9 +127,12 @@ async def on_ready():
         scheduler.start()
         print(f"Auto-host scheduler started (interval: {interval}s)")
 
+    await card_spawner.start()
+
 
 def main():
     setup_admin_commands(bot)
+    setup_card_commands(bot)
     token = os.getenv("DISCORD_BOT_TOKEN")
     if not token:
         print("ERROR: DISCORD_BOT_TOKEN not found in .env")
