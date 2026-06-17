@@ -34,15 +34,15 @@ def assign_roles(player_count, players):
     forced = [p for p in players if hasattr(p, '_forced_role') and p._forced_role]
     free = [p for p in players if not hasattr(p, '_forced_role') or not p._forced_role]
 
-    forced_role_names = [p._forced_role for p in forced]
-
-    roles = generate_role_list(player_count, exclude=forced_role_names)
+    roles = generate_role_list(player_count)
 
     assignments = []
     for player in forced:
-        player.role = player._forced_role
+        forced_role = player._forced_role
+        if forced_role in roles:
+            roles.remove(forced_role)
+        player.role = forced_role
         assignments.append(player)
-        roles.remove(player._forced_role)
 
     random.shuffle(free)
     for i, player in enumerate(free):

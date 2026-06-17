@@ -180,33 +180,42 @@ class GameInstance:
         return player
 
     async def start_game(self, bot):
-        self.state = "playing"
-        guild = bot.get_guild(self.guild_id)
-        if not guild:
-            return
+        try:
+            self.state = "playing"
+            guild = bot.get_guild(self.guild_id)
+            if not guild:
+                return
 
-        await setup_game_channels(self, guild)
+            await setup_game_channels(self, guild)
 
-        for p in self.players:
-            if p.is_dummy:
-                continue
-            member = guild.get_member(p.user_id)
-            if member:
-                p.original_roles = [r.id for r in member.roles if r.name != "@everyone" and not r.managed]
-                try:
-                    await member.add_roles(self.player_role)
-                except discord.Forbidden:
-                    pass
+            for p in self.players:
+                if p.is_dummy:
+                    continue
+                member = guild.get_member(p.user_id)
+                if member:
+                    p.original_roles = [r.id for r in member.roles if r.name != "@everyone" and not r.managed]
+                    try:
+                        await member.add_roles(self.player_role)
+                    except discord.Forbidden:
+                        pass
 
-        assignments, self.mafia_team = assign_roles(len(self.players), self.players)
+            await self.town_square.send(f"🎮 **Game starting!** {len(self.players)} players.")
 
-        await add_mafia_permissions(self, guild, self.mafia_team)
+            assignments, self.mafia_team = assign_roles(len(self.players), self.players)
 
-        await self._send_role_dms(bot)
+            await add_mafia_permissions(self, guild, self.mafia_team)
 
-        await self._send_team_breakdown()
+            await self._send_role_dms(bot)
 
-        await self._run_game_loop(bot)
+            await self._send_team_breakdown()
+
+            await self._run_game_loop(bot)
+        except Exception as e:
+            print(f"START ERROR: {e}")
+            import traceback
+            traceback.print_exc()
+            if not self._cancel_token.is_set():
+                await self.end_game(bot, "error")
 
     async def start_test_game(self, bot, admin_member):
         try:
