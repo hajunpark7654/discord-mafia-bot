@@ -326,3 +326,20 @@ def setup_card_commands(bot: commands.Bot):
             spawner.spawn_channel_id = channel.id
             await spawner.start()
 
+    @bot.tree.command(name="card_debug", description="[ADMIN] Show card DB diagnostics", guild=guild)
+    async def card_debug(interaction: discord.Interaction):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+        from bot.cards.db import get_all_templates
+        from bot.database.db import get_config
+        templates = get_all_templates()
+        spawn_channel = get_config("card_spawn_channel")
+        msg = (
+            f"**Templates:** {len(templates)}\n"
+            f"**Spawn channel:** {spawn_channel or 'Not set'}\n"
+        )
+        if templates:
+            msg += "**Template names:** " + ", ".join(t["name"] for t in templates[:10]) + "\n"
+        await interaction.response.send_message(msg, ephemeral=True)
+
