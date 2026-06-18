@@ -84,7 +84,9 @@ class CatchView(discord.ui.View):
         if self.caught:
             await interaction.response.send_message("❌ Already caught!", ephemeral=True)
             return
+
         self.caught = True
+        await interaction.response.defer(ephemeral=True)
         self.disable_all_items()
         if self.message:
             await self.message.edit(content="🎴 Card caught!", view=self)
@@ -130,7 +132,7 @@ class CatchView(discord.ui.View):
                 description="\n".join(lines),
                 color=0xFFD700 if card["is_shiny"] else (0x000000 if card["is_mythical"] else 0x00FF00),
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
             button.disabled = True
         except Exception as e:
             self.caught = False
@@ -138,6 +140,6 @@ class CatchView(discord.ui.View):
             if self.message:
                 await self.message.edit(content="❌ Error catching card. Try again.", view=self)
             try:
-                await interaction.response.send_message("❌ An error occurred while catching the card.", ephemeral=True)
-            except:
                 await interaction.followup.send("❌ An error occurred while catching the card.", ephemeral=True)
+            except:
+                pass
