@@ -1,4 +1,5 @@
 import discord
+from typing import Optional
 from discord import app_commands
 from discord.ext import commands
 from config import GUILD_ID, ADMIN_USER_ID
@@ -195,9 +196,9 @@ def setup_card_commands(bot: commands.Bot):
         )
         await interaction.response.send_message(f"✅ Redeemed **{name}** for {player.mention}! (ID: {cid})", ephemeral=True)
 
-    @bot.tree.command(name="give", description="[ADMIN] Give any card to a player (random modifiers)", guild=guild)
-    @app_commands.describe(player="Recipient", card_name="Template name (case-insensitive)")
-    async def give_card(interaction: discord.Interaction, player: discord.User, card_name: str):
+    @bot.tree.command(name="give", description="[ADMIN] Give any card to a player (random modifiers unless overridden)", guild=guild)
+    @app_commands.describe(player="Recipient", card_name="Template name", shiny="Override shiny", mythical="Override mythical", hp_mod="HP modifier (-0.15 to 0.15)", atk_mod="ATK modifier", spd_mod="SPD modifier")
+    async def give_card(interaction: discord.Interaction, player: discord.User, card_name: str, shiny: Optional[bool] = None, mythical: Optional[bool] = None, hp_mod: Optional[float] = None, atk_mod: Optional[float] = None, spd_mod: Optional[float] = None):
         if not is_admin(interaction):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
@@ -207,6 +208,25 @@ def setup_card_commands(bot: commands.Bot):
             return
         template = templates[0]
         card = generate_card(template, from_mafia=False)
+        if shiny is not None:
+            card["is_shiny"] = shiny
+        if mythical is not None:
+            card["is_mythical"] = mythical
+        if hp_mod is not None:
+            card["health_mod"] = round(hp_mod, 4)
+        if atk_mod is not None:
+            card["attack_mod"] = round(atk_mod, 4)
+        if spd_mod is not None:
+            card["speed_mod"] = round(spd_mod, 4)
+
+        from bot.cards.models import apply_modifiers
+        card["health"], card["attack"], card["speed"] = apply_modifiers(
+            template["health"], template["attack"], template["speed"],
+            card["health_mod"], card["attack_mod"], card["speed_mod"],
+        )
+        card["ovr"] = compute_ovr(card["health"], card["attack"], card["speed"])
+        card["rarity"] = compute_rarity(card["ovr"])
+
         cid = insert_card_instance(
             owner_id=player.id,
             template_id=card["template_id"],
@@ -221,9 +241,9 @@ def setup_card_commands(bot: commands.Bot):
             rarity=card["rarity"],
             ovr=card["ovr"],
         )
-        shiny = " ✨" if card["is_shiny"] else ""
-        mythical = " 🌌" if card["is_mythical"] else ""
-        await interaction.response.send_message(f"✅ Gave **{template['name']}**{shiny}{mythical} [{card['rarity']}] OVR:{card['ovr']} to {player.mention}! (ID: {cid})", ephemeral=True)
+        shiny_s = " ✨" if card["is_shiny"] else ""
+        mythical_s = " 🌌" if card["is_mythical"] else ""
+        await interaction.response.send_message(f"✅ Gave **{template['name']}**{shiny_s}{mythical_s} [{card['rarity']}] OVR:{card['ovr']} to {player.mention}! (ID: {cid})", ephemeral=True)
 
     @bot.tree.command(name="card_add_template", description="[ADMIN] Add a new card template", guild=guild)
     @app_commands.describe(name="Person's name", health="Base HP (max 5000)", attack="Base ATK (max 3000)", speed="Base SPD (max 1000)", quote="Random quote/myth", image_url="Card image URL", catch_image_url="Spawn image URL")
