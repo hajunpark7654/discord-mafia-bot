@@ -85,49 +85,59 @@ class CatchView(discord.ui.View):
             await interaction.response.send_message("❌ Already caught!", ephemeral=True)
             return
         self.caught = True
-        self.disable_all()
+        self.disable_all_items()
         if self.message:
             await self.message.edit(content="🎴 Card caught!", view=self)
 
-        card = generate_card(self.template, from_mafia=False)
-        card_id = insert_card_instance(
-            owner_id=interaction.user.id,
-            template_id=card["template_id"],
-            health=card["health"],
-            attack=card["attack"],
-            speed=card["speed"],
-            h_mod=card["health_mod"],
-            a_mod=card["attack_mod"],
-            s_mod=card["speed_mod"],
-            is_shiny=card["is_shiny"],
-            is_mythical=card["is_mythical"],
-            rarity=card["rarity"],
-            ovr=card["ovr"],
-        )
+        try:
+            card = generate_card(self.template, from_mafia=False)
+            card_id = insert_card_instance(
+                owner_id=interaction.user.id,
+                template_id=card["template_id"],
+                health=card["health"],
+                attack=card["attack"],
+                speed=card["speed"],
+                h_mod=card["health_mod"],
+                a_mod=card["attack_mod"],
+                s_mod=card["speed_mod"],
+                is_shiny=card["is_shiny"],
+                is_mythical=card["is_mythical"],
+                rarity=card["rarity"],
+                ovr=card["ovr"],
+            )
 
-        lines = [f"Congratulations, {interaction.user.mention}!"]
-        lines.append(f"You caught **{self.template['name']}**!")
-        mod_parts = []
-        if card["health_mod"] != 0:
-            mod_parts.append(f"{'+' if card['health_mod'] > 0 else ''}{card['health_mod']*100:.1f}% health")
-        if card["attack_mod"] != 0:
-            mod_parts.append(f"{'+' if card['attack_mod'] > 0 else ''}{card['attack_mod']*100:.1f}% attack")
-        if card["speed_mod"] != 0:
-            mod_parts.append(f"{'+' if card['speed_mod'] > 0 else ''}{card['speed_mod']*100:.1f}% speed")
-        if mod_parts:
-            lines.append(f"Modifiers: {', '.join(mod_parts)}")
-        if card["is_shiny"]:
-            lines.append("✨ This card **RADIATES** a golden aura.")
-        if card["is_mythical"]:
-            lines.append("🌌 The air tenses, as a mythical aura emits from the card.")
-        if card["rarity"] == "S":
-            lines.append("💭 You feel empowered, as memories of the past flow through your mind.")
-        lines.append(f"Rarity: **{card['rarity']}** | OVR: **{card['ovr']}**")
+            lines = [f"Congratulations, {interaction.user.mention}!"]
+            lines.append(f"You caught **{self.template['name']}**!")
+            mod_parts = []
+            if card["health_mod"] != 0:
+                mod_parts.append(f"{'+' if card['health_mod'] > 0 else ''}{card['health_mod']*100:.1f}% health")
+            if card["attack_mod"] != 0:
+                mod_parts.append(f"{'+' if card['attack_mod'] > 0 else ''}{card['attack_mod']*100:.1f}% attack")
+            if card["speed_mod"] != 0:
+                mod_parts.append(f"{'+' if card['speed_mod'] > 0 else ''}{card['speed_mod']*100:.1f}% speed")
+            if mod_parts:
+                lines.append(f"Modifiers: {', '.join(mod_parts)}")
+            if card["is_shiny"]:
+                lines.append("✨ This card **RADIATES** a golden aura.")
+            if card["is_mythical"]:
+                lines.append("🌌 The air tenses, as a mythical aura emits from the card.")
+            if card["rarity"] == "S":
+                lines.append("💭 You feel empowered, as memories of the past flow through your mind.")
+            lines.append(f"Rarity: **{card['rarity']}** | OVR: **{card['ovr']}**")
 
-        embed = Embed(
-            title="🎴 Card Acquired!",
-            description="\n".join(lines),
-            color=0xFFD700 if card["is_shiny"] else (0x000000 if card["is_mythical"] else 0x00FF00),
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        button.disabled = True
+            embed = Embed(
+                title="🎴 Card Acquired!",
+                description="\n".join(lines),
+                color=0xFFD700 if card["is_shiny"] else (0x000000 if card["is_mythical"] else 0x00FF00),
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            button.disabled = True
+        except Exception as e:
+            self.caught = False
+            print(f"Card catch error: {e}")
+            if self.message:
+                await self.message.edit(content="❌ Error catching card. Try again.", view=self)
+            try:
+                await interaction.response.send_message("❌ An error occurred while catching the card.", ephemeral=True)
+            except:
+                await interaction.followup.send("❌ An error occurred while catching the card.", ephemeral=True)

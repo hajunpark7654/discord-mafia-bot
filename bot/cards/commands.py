@@ -38,19 +38,32 @@ def setup_card_commands(bot: commands.Bot):
             return
 
         color = 0x000000 if card["is_mythical"] else RARITY_COLORS.get(card["rarity"], 0x808080)
+
+        desc_parts = [f"**{card['rarity']}**"]
+        if card["is_shiny"]:
+            desc_parts.append("✨ This card is a shiny!")
+        if card["is_mythical"]:
+            desc_parts.append("🌌 This card exudes a mythical aura!")
+
+        stats = f"HP: {card['health']}"
+        if card["health_mod"]:
+            stats += f" ({card['health_mod']*100:+.1f}%)"
+        stats += f"    ATK: {card['attack']}"
+        if card["attack_mod"]:
+            stats += f" ({card['attack_mod']*100:+.1f}%)"
+        stats += f"    SPD: {card['speed']}"
+        if card["speed_mod"]:
+            stats += f" ({card['speed_mod']*100:+.1f}%)"
+        desc_parts.append(stats)
+        desc_parts.append(f"**OVR: {card['ovr']}**")
+
         embed = discord.Embed(
             title=f"{'✨ ' if card['is_shiny'] else ''}{'🌌 ' if card['is_mythical'] else ''}{card['card_name']}",
+            description="\n".join(desc_parts),
             color=color,
         )
         if card.get("image_url"):
             embed.set_image(url=card["image_url"])
-        embed.add_field(name="Rarity", value=card["rarity"], inline=True)
-        embed.add_field(name="Health", value=f"{card['health']} ({card['health_mod']*100:+.1f}%)" if card["health_mod"] else str(card["health"]), inline=True)
-        embed.add_field(name="Attack", value=f"{card['attack']} ({card['attack_mod']*100:+.1f}%)" if card["attack_mod"] else str(card["attack"]), inline=True)
-        embed.add_field(name="Speed", value=f"{card['speed']} ({card['speed_mod']*100:+.1f}%)" if card["speed_mod"] else str(card["speed"]), inline=True)
-        embed.add_field(name="OVR", value=card["ovr"], inline=True)
-        embed.add_field(name="Shiny", value="Yes ✨" if card["is_shiny"] else "No", inline=True)
-        embed.add_field(name="Mythical", value="Yes 🌌" if card["is_mythical"] else "No", inline=True)
         if card.get("quote"):
             embed.set_footer(text=card["quote"])
         await interaction.response.send_message(embed=embed)
