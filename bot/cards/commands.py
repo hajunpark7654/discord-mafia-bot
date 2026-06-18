@@ -52,9 +52,11 @@ def setup_card_commands(bot: commands.Bot):
 
         stats = f"HP: {card['health']}{fmt_mod(card['health_mod'])}    ATK: {card['attack']}{fmt_mod(card['attack_mod'])}    SPD: {card['speed']}{fmt_mod(card['speed_mod'])}"
         desc_parts.append(stats)
+
+        footer_parts = []
         if card.get("quote"):
-            desc_parts.append(f"*{card['quote']}*")
-        desc_parts.append(f"**OVR: {card['ovr']}**")
+            footer_parts.append(card["quote"])
+        footer_parts.append(f"OVR: {card['ovr']}")
 
         embed = discord.Embed(
             title=f"{'✨ ' if card['is_shiny'] else ''}{'🌌 ' if card['is_mythical'] else ''}{card['card_name']}",
@@ -63,6 +65,7 @@ def setup_card_commands(bot: commands.Bot):
         )
         if card.get("image_url"):
             embed.set_image(url=card["image_url"])
+        embed.set_footer(text="\n".join(footer_parts))
         await interaction.response.send_message(embed=embed)
 
     @bot.tree.command(name="card_give", description="Give a card to another player", guild=guild)
