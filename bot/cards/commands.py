@@ -50,10 +50,9 @@ def setup_card_commands(bot: commands.Bot):
                 return ""
             return f" ({mod*100:+.1f}%)"
 
-        stats = f"HP: {card['health']}{fmt_mod(card['health_mod'])}    ATK: {card['attack']}{fmt_mod(card['attack_mod'])}    SPD: {card['speed']}{fmt_mod(card['speed_mod'])}"
-        desc_parts.append(stats)
+        stats_line = f"HP: {card['health']}{fmt_mod(card['health_mod'])}    ATK: {card['attack']}{fmt_mod(card['attack_mod'])}    SPD: {card['speed']}{fmt_mod(card['speed_mod'])}"
 
-        footer_parts = []
+        footer_parts = [stats_line]
         if card.get("quote"):
             footer_parts.append(card["quote"])
         footer_parts.append(f"OVR: {card['ovr']}")
