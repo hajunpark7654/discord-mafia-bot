@@ -293,7 +293,8 @@ def setup_card_commands(bot: commands.Bot):
         import asyncio
         await asyncio.sleep(CATCH_TIMEOUT)
         if not view.caught:
-            await msg.edit(content="⏰ The card vanished...", embed=None, view=None)
+            view.disable_all_items()
+            await msg.edit(content="⏰ The card got away...", view=view)
 
     @bot.tree.command(name="card_add_template", description="[ADMIN] Add a new card template", guild=guild)
     @app_commands.describe(name="Person's name", health="Base HP (max 5000)", attack="Base ATK (max 3000)", speed="Base SPD (max 1000)", quote="Random quote/myth", image_url="Card image URL", catch_image_url="Spawn image URL")

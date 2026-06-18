@@ -68,7 +68,8 @@ class CardSpawner:
 
         await asyncio.sleep(CATCH_TIMEOUT)
         if not view.caught:
-            await msg.edit(content="⏰ The card vanished...", embed=None, view=None)
+            view.disable_all_items()
+            await msg.edit(content="⏰ The card got away...", view=view)
 
 
 class CatchView(discord.ui.View):
