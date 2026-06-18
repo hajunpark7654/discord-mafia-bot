@@ -112,16 +112,22 @@ class CatchView(discord.ui.View):
             lines = [f"Congratulations, {interaction.user.mention}!"]
             lines.append(f"You caught **{self.template['name']}**!")
             mod_parts = []
-            if card["health_mod"] != 0:
-                mod_parts.append(f"{'+' if card['health_mod'] > 0 else ''}{card['health_mod']*100:.1f}% health")
-            if card["attack_mod"] != 0:
-                mod_parts.append(f"{'+' if card['attack_mod'] > 0 else ''}{card['attack_mod']*100:.1f}% attack")
             if card["speed_mod"] != 0:
                 mod_parts.append(f"{'+' if card['speed_mod'] > 0 else ''}{card['speed_mod']*100:.1f}% speed")
+            if card["attack_mod"] != 0:
+                mod_parts.append(f"{'+' if card['attack_mod'] > 0 else ''}{card['attack_mod']*100:.1f}% attack")
+            if card["health_mod"] != 0:
+                mod_parts.append(f"{'+' if card['health_mod'] > 0 else ''}{card['health_mod']*100:.1f}% health")
+
+            congrats = f"Congratulations, {interaction.user.mention}, You caught **{self.template['name']}**"
             if mod_parts:
-                lines.append(f"Modifiers: {', '.join(mod_parts)}")
+                congrats += f" with modifiers: {', '.join(mod_parts)}"
+            else:
+                congrats += "!"
+            lines = [congrats]
+
             if card["is_shiny"]:
-                lines.append("✨ This card **RADIATES** a golden aura.")
+                lines.append("✨ This card RADIATES a golden-aura.")
             if card["is_mythical"]:
                 lines.append("🌌 The air tenses, as a mythical aura emits from the card.")
             if card["rarity"] == "S":
