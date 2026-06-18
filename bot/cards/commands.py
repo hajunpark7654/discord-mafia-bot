@@ -45,16 +45,15 @@ def setup_card_commands(bot: commands.Bot):
         if card["is_mythical"]:
             desc_parts.append("🌌 This card exudes a mythical aura!")
 
-        stats = f"HP: {card['health']}"
-        if card["health_mod"]:
-            stats += f" ({card['health_mod']*100:+.1f}%)"
-        stats += f"    ATK: {card['attack']}"
-        if card["attack_mod"]:
-            stats += f" ({card['attack_mod']*100:+.1f}%)"
-        stats += f"    SPD: {card['speed']}"
-        if card["speed_mod"]:
-            stats += f" ({card['speed_mod']*100:+.1f}%)"
+        def fmt_mod(mod):
+            if mod == 0:
+                return ""
+            return f" ({mod*100:+.1f}%)"
+
+        stats = f"HP: {card['health']}{fmt_mod(card['health_mod'])}    ATK: {card['attack']}{fmt_mod(card['attack_mod'])}    SPD: {card['speed']}{fmt_mod(card['speed_mod'])}"
         desc_parts.append(stats)
+        if card.get("quote"):
+            desc_parts.append(f"*{card['quote']}*")
         desc_parts.append(f"**OVR: {card['ovr']}**")
 
         embed = discord.Embed(
@@ -64,8 +63,6 @@ def setup_card_commands(bot: commands.Bot):
         )
         if card.get("image_url"):
             embed.set_image(url=card["image_url"])
-        if card.get("quote"):
-            embed.set_footer(text=card["quote"])
         await interaction.response.send_message(embed=embed)
 
     @bot.tree.command(name="card_give", description="Give a card to another player", guild=guild)
