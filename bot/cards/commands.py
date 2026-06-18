@@ -8,7 +8,7 @@ from bot.cards.db import (
     get_all_templates, get_completion, get_owned_template_ids,
     add_card_template, create_battle, insert_card_instance,
 )
-from bot.cards.models import generate_card, RARITY_COLORS
+from bot.cards.models import generate_card, RARITY_COLORS, compute_ovr, compute_rarity
 from bot.cards.battle import run_battle
 
 
@@ -195,9 +195,39 @@ def setup_card_commands(bot: commands.Bot):
         )
         await interaction.response.send_message(f"✅ Redeemed **{name}** for {player.mention}! (ID: {cid})", ephemeral=True)
 
+    @bot.tree.command(name="give", description="[ADMIN] Give any card to a player (random modifiers)", guild=guild)
+    @app_commands.describe(player="Recipient", card_name="Template name (case-insensitive)")
+    async def give_card(interaction: discord.Interaction, player: discord.User, card_name: str):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+        templates = [t for t in get_all_templates() if t["name"].lower() == card_name.lower()]
+        if not templates:
+            await interaction.response.send_message("❌ No template found with that name.", ephemeral=True)
+            return
+        template = templates[0]
+        card = generate_card(template, from_mafia=False)
+        cid = insert_card_instance(
+            owner_id=player.id,
+            template_id=card["template_id"],
+            health=card["health"],
+            attack=card["attack"],
+            speed=card["speed"],
+            h_mod=card["health_mod"],
+            a_mod=card["attack_mod"],
+            s_mod=card["speed_mod"],
+            is_shiny=card["is_shiny"],
+            is_mythical=card["is_mythical"],
+            rarity=card["rarity"],
+            ovr=card["ovr"],
+        )
+        shiny = " ✨" if card["is_shiny"] else ""
+        mythical = " 🌌" if card["is_mythical"] else ""
+        await interaction.response.send_message(f"✅ Gave **{template['name']}**{shiny}{mythical} [{card['rarity']}] OVR:{card['ovr']} to {player.mention}! (ID: {cid})", ephemeral=True)
+
     @bot.tree.command(name="card_add_template", description="[ADMIN] Add a new card template", guild=guild)
-    @app_commands.describe(name="Person's name", health="Base HP", attack="Base ATK", speed="Base SPD", rarity="S/A/B/C/D/F", quote="Random quote/myth", image_url="Card image URL", catch_image_url="Spawn image URL")
-    async def card_add_template_cmd(interaction: discord.Interaction, name: str, health: int = 1000, attack: int = 500, speed: int = 200, rarity: str = "F", quote: str = "", image_url: str = "", catch_image_url: str = ""):
+    @app_commands.describe(name="Person's name", health="Base HP (max 5000)", attack="Base ATK (max 3000)", speed="Base SPD (max 1000)", quote="Random quote/myth", image_url="Card image URL", catch_image_url="Spawn image URL")
+    async def card_add_template_cmd(interaction: discord.Interaction, name: str, health: int = 1000, attack: int = 500, speed: int = 200, quote: str = "", image_url: str = "", catch_image_url: str = ""):
         if not is_admin(interaction):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
@@ -205,12 +235,10 @@ def setup_card_commands(bot: commands.Bot):
         if existing:
             await interaction.response.send_message("❌ Template already exists.", ephemeral=True)
             return
-        rarity = rarity.upper()
-        if rarity not in ("S", "A", "B", "C", "D", "F"):
-            await interaction.response.send_message("❌ Rarity must be S, A, B, C, D, or F.", ephemeral=True)
-            return
+        ovr = compute_ovr(health, attack, speed)
+        rarity = compute_rarity(ovr)
         add_card_template(name, health, attack, speed, rarity, image_url, catch_image_url, quote)
-        await interaction.response.send_message(f"✅ Added card template: **{name}** [{rarity}] HP:{health} ATK:{attack} SPD:{speed}", ephemeral=True)
+        await interaction.response.send_message(f"✅ Added card template: **{name}** [{rarity}] OVR:{ovr} HP:{health} ATK:{attack} SPD:{speed}", ephemeral=True)
 
     @bot.tree.command(name="set_spawn", description="[ADMIN] Set the card spawn channel", guild=guild)
     @app_commands.describe(channel="Channel to spawn cards in")

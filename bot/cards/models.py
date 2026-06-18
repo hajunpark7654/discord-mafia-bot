@@ -14,6 +14,20 @@ def compute_ovr(health, attack, speed):
     return 2 * attack + health + speed
 
 
+def compute_rarity(ovr):
+    if ovr >= 11000:
+        return "S"
+    elif ovr >= 9000:
+        return "A"
+    elif ovr >= 7000:
+        return "B"
+    elif ovr >= 5000:
+        return "C"
+    elif ovr >= 3000:
+        return "D"
+    return "F"
+
+
 def roll_modifier():
     return round(random.uniform(-0.15, 0.15), 4)
 
