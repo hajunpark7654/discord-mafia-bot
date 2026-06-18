@@ -9,8 +9,9 @@ from bot.cards.db import (
     get_all_templates, get_completion, get_owned_template_ids,
     add_card_template, create_battle, insert_card_instance,
 )
-from bot.cards.models import generate_card, RARITY_COLORS, compute_ovr, compute_rarity
+from bot.cards.models import generate_card, RARITY_COLORS, compute_ovr, compute_rarity, apply_modifiers
 from bot.cards.battle import run_battle
+from bot.cards.spawner import CatchView, CATCH_TIMEOUT
 
 
 async def card_autocomplete(interaction: discord.Interaction, current: str):
@@ -219,13 +220,11 @@ def setup_card_commands(bot: commands.Bot):
         if spd_mod is not None:
             card["speed_mod"] = round(spd_mod, 4)
 
-        from bot.cards.models import apply_modifiers
         card["health"], card["attack"], card["speed"] = apply_modifiers(
             template["health"], template["attack"], template["speed"],
             card["health_mod"], card["attack_mod"], card["speed_mod"],
         )
         card["ovr"] = compute_ovr(card["health"], card["attack"], card["speed"])
-        card["rarity"] = compute_rarity(card["ovr"])
 
         cid = insert_card_instance(
             owner_id=player.id,
@@ -244,6 +243,45 @@ def setup_card_commands(bot: commands.Bot):
         shiny_s = " ✨" if card["is_shiny"] else ""
         mythical_s = " 🌌" if card["is_mythical"] else ""
         await interaction.response.send_message(f"✅ Gave **{template['name']}**{shiny_s}{mythical_s} [{card['rarity']}] OVR:{card['ovr']} to {player.mention}! (ID: {cid})", ephemeral=True)
+
+    @bot.tree.command(name="spawn", description="[ADMIN] Spawn a wild card (first clicker catches it)", guild=guild)
+    @app_commands.describe(card_name="Template name", channel="Override spawn channel (defaults to /set_spawn)")
+    async def spawn_card(interaction: discord.Interaction, card_name: str, channel: discord.TextChannel = None):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+
+        templates = [t for t in get_all_templates() if t["name"].lower() == card_name.lower()]
+        if not templates:
+            await interaction.response.send_message("❌ No template found with that name.", ephemeral=True)
+            return
+        template = templates[0]
+
+        from bot.database.db import get_config
+        spawn_channel_id = get_config("card_spawn_channel")
+        spawn_channel = channel or (bot.get_channel(int(spawn_channel_id)) if spawn_channel_id else None)
+        if not spawn_channel:
+            await interaction.response.send_message("❌ No spawn channel configured. Use /set_spawn first or specify a channel.", ephemeral=True)
+            return
+
+        embed = discord.Embed(
+            title=f"🌟 A wild card appeared!",
+            description=f"**{template['name']}**\n\nFirst to catch it gets the card!",
+            color=0x00FF00,
+        )
+        if template.get("catch_image_url"):
+            embed.set_image(url=template["catch_image_url"])
+
+        view = CatchView(template, bot)
+        msg = await spawn_channel.send(embed=embed, view=view)
+        view.message = msg
+
+        await interaction.response.send_message(f"✅ Spawned **{template['name']}** in {spawn_channel.mention}!", ephemeral=True)
+
+        import asyncio
+        await asyncio.sleep(CATCH_TIMEOUT)
+        if not view.caught:
+            await msg.edit(content="⏰ The card vanished...", embed=None, view=None)
 
     @bot.tree.command(name="card_add_template", description="[ADMIN] Add a new card template", guild=guild)
     @app_commands.describe(name="Person's name", health="Base HP (max 5000)", attack="Base ATK (max 3000)", speed="Base SPD (max 1000)", quote="Random quote/myth", image_url="Card image URL", catch_image_url="Spawn image URL")
