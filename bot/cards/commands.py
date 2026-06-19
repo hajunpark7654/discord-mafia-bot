@@ -60,7 +60,13 @@ def setup_card_commands(bot: commands.Bot):
             description="\n".join(desc_parts),
             color=color,
         )
-        img = card.get("image_url") or ""
+        img = ""
+        if card["is_mythical"]:
+            img = card.get("mythical_catch_image_url") or ""
+        if not img and card["is_shiny"]:
+            img = card.get("shiny_catch_image_url") or ""
+        if not img:
+            img = card.get("catch_image_url") or ""
         if img:
             embed.set_image(url=img)
         embed.set_footer(text="\n".join(footer_parts))
@@ -109,7 +115,7 @@ def setup_card_commands(bot: commands.Bot):
             if c["attack_mod"]: parts.append(f"ATK{c['attack_mod']*100:+.0f}%")
             if c["speed_mod"]: parts.append(f"SPD{c['speed_mod']*100:+.0f}%")
             if parts: mods = f" ({', '.join(parts)})"
-            lines.append(f"`#{c['id']}` {tag}**{c['card_name']}** [{c['rarity']}] OVR:{c['ovr']}{mods}")
+            lines.append(f"{tag}**{c['card_name']}** [{c['rarity']}] OVR:{c['ovr']}{mods}")
 
         embed = discord.Embed(
             title=f"🎴 {interaction.user.display_name}'s Cards ({len(cards)})",
@@ -288,8 +294,8 @@ def setup_card_commands(bot: commands.Bot):
             description=f"**{template['name']}**\n\nFirst to catch it gets the card!",
             color=0x00FF00,
         )
-        if template.get("catch_image_url"):
-            embed.set_image(url=template["catch_image_url"])
+        if template.get("image_url"):
+            embed.set_image(url=template["image_url"])
 
         view = CatchView(template, bot)
         msg = await spawn_channel.send(embed=embed, view=view)
@@ -300,11 +306,12 @@ def setup_card_commands(bot: commands.Bot):
         import asyncio
         await asyncio.sleep(CATCH_TIMEOUT)
         if not view.caught:
-            view.disable_all_items()
+            for item in view.children:
+                item.disabled = True
             await msg.edit(content="⏰ The card got away...", view=view)
 
     @bot.tree.command(name="card_add_template", description="[ADMIN] Add a new card template", guild=guild)
-    @app_commands.describe(name="Person's name", health="Base HP (max 5000)", attack="Base ATK (max 3000)", speed="Base SPD (max 1000)", image_url="Card image URL", catch_image_url="Spawn image URL", shiny_catch_image_url="Image for shiny spawn", mythical_catch_image_url="Image for mythical spawn")
+    @app_commands.describe(name="Person's name", health="Base HP (max 5000)", attack="Base ATK (max 3000)", speed="Base SPD (max 1000)", image_url="Spawn encounter image URL", catch_image_url="Base card art URL", shiny_catch_image_url="Shiny card art URL", mythical_catch_image_url="Mythical card art URL")
     async def card_add_template_cmd(interaction: discord.Interaction, name: str, health: int = 1000, attack: int = 500, speed: int = 200, image_url: str = "", catch_image_url: str = "", shiny_catch_image_url: str = "", mythical_catch_image_url: str = ""):
         if not is_admin(interaction):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)

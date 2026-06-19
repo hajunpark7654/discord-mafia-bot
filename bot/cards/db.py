@@ -190,7 +190,7 @@ def insert_card_instance(owner_id, template_id, health, attack, speed, h_mod, a_
 def get_player_cards(owner_id):
     conn = Connection()
     cur = conn.execute(
-        q("""SELECT ci.*, ct.name as card_name, ct.image_url, ct.shiny_catch_image_url, ct.mythical_catch_image_url, ct.quote
+        q("""SELECT ci.*, ct.name as card_name, ct.image_url, ct.catch_image_url, ct.shiny_catch_image_url, ct.mythical_catch_image_url, ct.quote
             FROM card_instances ci
             JOIN card_templates ct ON ci.template_id = ct.id
             WHERE ci.owner_id = ?
@@ -213,7 +213,7 @@ def get_player_cards(owner_id):
 def get_card_instance(card_id):
     conn = Connection()
     cur = conn.execute(
-        q("""SELECT ci.*, ct.name as card_name, ct.image_url, ct.shiny_catch_image_url, ct.mythical_catch_image_url, ct.quote
+        q("""SELECT ci.*, ct.name as card_name, ct.image_url, ct.catch_image_url, ct.shiny_catch_image_url, ct.mythical_catch_image_url, ct.quote
             FROM card_instances ci
             JOIN card_templates ct ON ci.template_id = ct.id
             WHERE ci.id = ?"""),

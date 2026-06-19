@@ -59,8 +59,8 @@ class CardSpawner:
             description=f"**{template['name']}**\n\nFirst to catch it gets the card!",
             color=0x00FF00,
         )
-        if template.get("catch_image_url"):
-            embed.set_image(url=template["catch_image_url"])
+        if template.get("image_url"):
+            embed.set_image(url=template["image_url"])
 
         view = CatchView(template, self.bot)
         msg = await channel.send(embed=embed, view=view)
@@ -68,7 +68,8 @@ class CardSpawner:
 
         await asyncio.sleep(CATCH_TIMEOUT)
         if not view.caught:
-            view.disable_all_items()
+            for item in view.children:
+                item.disabled = True
             await msg.edit(content="⏰ The card got away...", view=view)
 
 
@@ -87,7 +88,8 @@ class CatchView(discord.ui.View):
             return
 
         self.caught = True
-        self.disable_all_items()
+        for item in self.children:
+            item.disabled = True
         if self.message:
             await self.message.edit(content="🎴 Card caught!", view=self)
 
@@ -111,8 +113,6 @@ class CatchView(discord.ui.View):
                 ovr=card["ovr"],
             )
 
-            lines = [f"Congratulations, {interaction.user.mention}!"]
-            lines.append(f"You caught **{self.template['name']}**!")
             mod_parts = []
             if card["speed_mod"] != 0:
                 mod_parts.append(f"{'+' if card['speed_mod'] > 0 else ''}{card['speed_mod']*100:.1f}% speed")
@@ -155,7 +155,8 @@ class CatchView(discord.ui.View):
             button.disabled = True
         except Exception as e:
             self.caught = False
-            self.disable_all_items()
+            for item in self.children:
+                item.disabled = False
             print(f"Card catch error: {e}")
             import traceback
             traceback.print_exc()
