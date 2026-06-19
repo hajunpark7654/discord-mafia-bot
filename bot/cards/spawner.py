@@ -90,12 +90,12 @@ class CatchView(discord.ui.View):
         self.caught = True
         for item in self.children:
             item.disabled = True
-        if self.message:
-            await self.message.edit(content="🎴 Card caught!", view=self)
+        self.message = interaction.message
+        await interaction.response.edit_message(content="🎴 Card caught!", view=self)
 
-        asyncio.create_task(self._process_catch(interaction, button))
+        asyncio.create_task(self._process_catch(interaction))
 
-    async def _process_catch(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def _process_catch(self, interaction: discord.Interaction):
         try:
             card = generate_card(self.template, from_mafia=False)
             card_id = insert_card_instance(
@@ -152,7 +152,6 @@ class CatchView(discord.ui.View):
                 embed.set_image(url=img)
 
             await interaction.followup.send(embed=embed, ephemeral=True)
-            button.disabled = True
         except Exception as e:
             self.caught = False
             for item in self.children:
