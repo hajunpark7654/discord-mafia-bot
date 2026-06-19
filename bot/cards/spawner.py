@@ -139,6 +139,11 @@ class CatchView(discord.ui.View):
                 description="\n".join(lines),
                 color=0xFFD700 if card["is_shiny"] else (0x000000 if card["is_mythical"] else 0x00FF00),
             )
+            img = (self.template.get("mythical_catch_image_url") if card["is_mythical"] else
+                   self.template.get("shiny_catch_image_url") if card["is_shiny"] else None) or \
+                  self.template.get("image_url") or None
+            if img:
+                embed.set_image(url=img)
             await interaction.followup.send(embed=embed, ephemeral=True)
             button.disabled = True
         except Exception as e:

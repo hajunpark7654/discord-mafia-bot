@@ -39,7 +39,7 @@ def setup_card_commands(bot: commands.Bot):
 
         color = 0x000000 if card["is_mythical"] else RARITY_COLORS.get(card["rarity"], 0x808080)
 
-        desc_parts = [f"**{card['rarity']}**"]
+        desc_parts = []
         if card["is_shiny"]:
             desc_parts.append("✨ This card is a shiny!")
         if card["is_mythical"]:
@@ -53,8 +53,6 @@ def setup_card_commands(bot: commands.Bot):
         stats_line = f"HP: {card['health']}{fmt_mod(card['health_mod'])}    ATK: {card['attack']}{fmt_mod(card['attack_mod'])}    SPD: {card['speed']}{fmt_mod(card['speed_mod'])}"
 
         footer_parts = [stats_line]
-        if card.get("quote"):
-            footer_parts.append(card["quote"])
         footer_parts.append(f"OVR: {card['ovr']}")
 
         embed = discord.Embed(
@@ -62,8 +60,9 @@ def setup_card_commands(bot: commands.Bot):
             description="\n".join(desc_parts),
             color=color,
         )
-        if card.get("image_url"):
-            embed.set_image(url=card["image_url"])
+        img = card.get("mythical_catch_image_url") or card.get("shiny_catch_image_url") or card.get("image_url") or ""
+        if img:
+            embed.set_image(url=img)
         embed.set_footer(text="\n".join(footer_parts))
         await interaction.response.send_message(embed=embed)
 
@@ -297,8 +296,8 @@ def setup_card_commands(bot: commands.Bot):
             await msg.edit(content="⏰ The card got away...", view=view)
 
     @bot.tree.command(name="card_add_template", description="[ADMIN] Add a new card template", guild=guild)
-    @app_commands.describe(name="Person's name", health="Base HP (max 5000)", attack="Base ATK (max 3000)", speed="Base SPD (max 1000)", quote="Random quote/myth", image_url="Card image URL", catch_image_url="Spawn image URL")
-    async def card_add_template_cmd(interaction: discord.Interaction, name: str, health: int = 1000, attack: int = 500, speed: int = 200, quote: str = "", image_url: str = "", catch_image_url: str = ""):
+    @app_commands.describe(name="Person's name", health="Base HP (max 5000)", attack="Base ATK (max 3000)", speed="Base SPD (max 1000)", image_url="Card image URL", catch_image_url="Spawn image URL", shiny_catch_image_url="Image for shiny spawn", mythical_catch_image_url="Image for mythical spawn")
+    async def card_add_template_cmd(interaction: discord.Interaction, name: str, health: int = 1000, attack: int = 500, speed: int = 200, image_url: str = "", catch_image_url: str = "", shiny_catch_image_url: str = "", mythical_catch_image_url: str = ""):
         if not is_admin(interaction):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
@@ -308,7 +307,7 @@ def setup_card_commands(bot: commands.Bot):
             return
         ovr = compute_ovr(health, attack, speed)
         rarity = compute_rarity(ovr)
-        add_card_template(name, health, attack, speed, rarity, image_url, catch_image_url, quote)
+        add_card_template(name, health, attack, speed, rarity, image_url, catch_image_url, shiny_catch_image_url, mythical_catch_image_url, quote="")
         await interaction.response.send_message(f"✅ Added card template: **{name}** [{rarity}] OVR:{ovr} HP:{health} ATK:{attack} SPD:{speed}", ephemeral=True)
 
     @bot.tree.command(name="set_spawn", description="[ADMIN] Set the card spawn channel", guild=guild)

@@ -13,6 +13,8 @@ def init_card_tables():
             rarity TEXT DEFAULT 'F',
             image_url TEXT DEFAULT '',
             catch_image_url TEXT DEFAULT '',
+            shiny_catch_image_url TEXT DEFAULT '',
+            mythical_catch_image_url TEXT DEFAULT '',
             quote TEXT DEFAULT ''
         )""")
         conn.execute("""CREATE TABLE IF NOT EXISTS card_instances (
@@ -40,6 +42,8 @@ def init_card_tables():
             started_at TEXT DEFAULT (NOW()),
             finished_at TEXT
         )""")
+        conn.execute("ALTER TABLE card_templates ADD COLUMN IF NOT EXISTS shiny_catch_image_url TEXT DEFAULT ''")
+        conn.execute("ALTER TABLE card_templates ADD COLUMN IF NOT EXISTS mythical_catch_image_url TEXT DEFAULT ''")
     else:
         conn.execute("""CREATE TABLE IF NOT EXISTS card_templates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,6 +54,8 @@ def init_card_tables():
             rarity TEXT DEFAULT 'F',
             image_url TEXT DEFAULT '',
             catch_image_url TEXT DEFAULT '',
+            shiny_catch_image_url TEXT DEFAULT '',
+            mythical_catch_image_url TEXT DEFAULT '',
             quote TEXT DEFAULT ''
         )""")
         conn.execute("""CREATE TABLE IF NOT EXISTS card_instances (
@@ -79,17 +85,28 @@ def init_card_tables():
             finished_at TEXT
         )""")
     conn.commit()
+    # Add new columns to existing databases
+    if not USE_PG:
+        try:
+            conn.execute("ALTER TABLE card_templates ADD COLUMN shiny_catch_image_url TEXT DEFAULT ''")
+        except:
+            pass
+        try:
+            conn.execute("ALTER TABLE card_templates ADD COLUMN mythical_catch_image_url TEXT DEFAULT ''")
+        except:
+            pass
+        conn.commit()
     conn.close()
 
 
-def add_card_template(name, health=1000, attack=500, speed=200, rarity="F", image_url="", catch_image_url="", quote=""):
+def add_card_template(name, health=1000, attack=500, speed=200, rarity="F", image_url="", catch_image_url="", shiny_catch_image_url="", mythical_catch_image_url="", quote=""):
     conn = Connection()
     if USE_PG:
-        conn.execute(q("INSERT INTO card_templates (name, health, attack, speed, rarity, image_url, catch_image_url, quote) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (name) DO NOTHING"),
-                     (name, health, attack, speed, rarity, image_url, catch_image_url, quote))
+        conn.execute(q("INSERT INTO card_templates (name, health, attack, speed, rarity, image_url, catch_image_url, shiny_catch_image_url, mythical_catch_image_url, quote) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (name) DO NOTHING"),
+                     (name, health, attack, speed, rarity, image_url, catch_image_url, shiny_catch_image_url, mythical_catch_image_url, quote))
     else:
-        conn.execute(q("INSERT OR IGNORE INTO card_templates (name, health, attack, speed, rarity, image_url, catch_image_url, quote) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"),
-                     (name, health, attack, speed, rarity, image_url, catch_image_url, quote))
+        conn.execute(q("INSERT OR IGNORE INTO card_templates (name, health, attack, speed, rarity, image_url, catch_image_url, shiny_catch_image_url, mythical_catch_image_url, quote) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
+                     (name, health, attack, speed, rarity, image_url, catch_image_url, shiny_catch_image_url, mythical_catch_image_url, quote))
     conn.commit()
     conn.close()
 
@@ -153,7 +170,7 @@ def insert_card_instance(owner_id, template_id, health, attack, speed, h_mod, a_
 def get_player_cards(owner_id):
     conn = Connection()
     cur = conn.execute(
-        q("""SELECT ci.*, ct.name as card_name, ct.image_url, ct.quote
+        q("""SELECT ci.*, ct.name as card_name, ct.image_url, ct.shiny_catch_image_url, ct.mythical_catch_image_url, ct.quote
             FROM card_instances ci
             JOIN card_templates ct ON ci.template_id = ct.id
             WHERE ci.owner_id = ?
@@ -176,7 +193,7 @@ def get_player_cards(owner_id):
 def get_card_instance(card_id):
     conn = Connection()
     cur = conn.execute(
-        q("""SELECT ci.*, ct.name as card_name, ct.image_url, ct.quote
+        q("""SELECT ci.*, ct.name as card_name, ct.image_url, ct.shiny_catch_image_url, ct.mythical_catch_image_url, ct.quote
             FROM card_instances ci
             JOIN card_templates ct ON ci.template_id = ct.id
             WHERE ci.id = ?"""),
