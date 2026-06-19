@@ -17,7 +17,10 @@ from bot.cards.spawner import CatchView, CATCH_TIMEOUT
 async def card_autocomplete(interaction: discord.Interaction, current: str):
     cards = get_player_cards(interaction.user.id)
     return [
-        app_commands.Choice(name=f"#{c['id']} {c['card_name']} [{c['rarity']}]", value=str(c["id"]))
+        app_commands.Choice(
+            name=f"{'✨' if c['is_shiny'] else ''}{'🌌' if c['is_mythical'] else ''}{c['card_name']} [{c['rarity']}]",
+            value=str(c["id"])
+        )
         for c in cards if current.lower() in c["card_name"].lower() or current.isdigit() and str(c["id"]).startswith(current)
     ][:25]
 
