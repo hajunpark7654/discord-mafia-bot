@@ -7,7 +7,7 @@ from bot.client import is_admin
 from bot.cards.db import (
     get_player_cards, get_card_instance, transfer_card,
     get_all_templates, get_completion, get_owned_template_ids,
-    add_card_template, create_battle, insert_card_instance,
+    add_card_template, delete_card_template, create_battle, insert_card_instance,
 )
 from bot.cards.models import generate_card, RARITY_COLORS, compute_ovr, compute_rarity, apply_modifiers
 from bot.cards.battle import run_battle
@@ -60,7 +60,13 @@ def setup_card_commands(bot: commands.Bot):
             description="\n".join(desc_parts),
             color=color,
         )
-        img = card.get("mythical_catch_image_url") or card.get("shiny_catch_image_url") or card.get("image_url") or ""
+        img = ""
+        if card["is_mythical"]:
+            img = card.get("mythical_catch_image_url") or ""
+        if not img and card["is_shiny"]:
+            img = card.get("shiny_catch_image_url") or ""
+        if not img:
+            img = card.get("image_url") or ""
         if img:
             embed.set_image(url=img)
         embed.set_footer(text="\n".join(footer_parts))
@@ -92,15 +98,16 @@ def setup_card_commands(bot: commands.Bot):
 
         lines = []
         for c in cards[:50]:
-            shiny = "✨ " if c["is_shiny"] else ""
-            mythical = "🌌 " if c["is_mythical"] else ""
+            shiny = "✨" if c["is_shiny"] else ""
+            mythical = "🌌" if c["is_mythical"] else ""
+            tag = shiny or mythical or ""
             mods = ""
             parts = []
             if c["health_mod"]: parts.append(f"HP{c['health_mod']*100:+.0f}%")
             if c["attack_mod"]: parts.append(f"ATK{c['attack_mod']*100:+.0f}%")
             if c["speed_mod"]: parts.append(f"SPD{c['speed_mod']*100:+.0f}%")
             if parts: mods = f" ({', '.join(parts)})"
-            lines.append(f"`#{c['id']}` {shiny}{mythical}**{c['card_name']}** [{c['rarity']}] OVR:{c['ovr']}{mods}")
+            lines.append(f"`#{c['id']}` {tag}**{c['card_name']}** OVR:{c['ovr']}{mods}")
 
         embed = discord.Embed(
             title=f"🎴 {interaction.user.display_name}'s Cards ({len(cards)})",
@@ -309,6 +316,18 @@ def setup_card_commands(bot: commands.Bot):
         rarity = compute_rarity(ovr)
         add_card_template(name, health, attack, speed, rarity, image_url, catch_image_url, shiny_catch_image_url, mythical_catch_image_url, quote="")
         await interaction.response.send_message(f"✅ Added card template: **{name}** [{rarity}] OVR:{ovr} HP:{health} ATK:{attack} SPD:{speed}", ephemeral=True)
+
+    @bot.tree.command(name="card_delete_template", description="[ADMIN] Delete a card template", guild=guild)
+    @app_commands.describe(name="Template name to delete")
+    async def card_delete_template_cmd(interaction: discord.Interaction, name: str):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+        deleted = delete_card_template(name)
+        if deleted:
+            await interaction.response.send_message(f"✅ Deleted template: **{name}**", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"❌ No template found with that name.", ephemeral=True)
 
     @bot.tree.command(name="set_spawn", description="[ADMIN] Set the card spawn channel", guild=guild)
     @app_commands.describe(channel="Channel to spawn cards in")

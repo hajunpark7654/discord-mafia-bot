@@ -139,9 +139,13 @@ class CatchView(discord.ui.View):
                 description="\n".join(lines),
                 color=0xFFD700 if card["is_shiny"] else (0x000000 if card["is_mythical"] else 0x00FF00),
             )
-            img = (self.template.get("mythical_catch_image_url") if card["is_mythical"] else
-                   self.template.get("shiny_catch_image_url") if card["is_shiny"] else None) or \
-                  self.template.get("image_url") or None
+            img = ""
+            if card["is_mythical"]:
+                img = self.template.get("mythical_catch_image_url") or ""
+            if not img and card["is_shiny"]:
+                img = self.template.get("shiny_catch_image_url") or ""
+            if not img:
+                img = self.template.get("image_url") or ""
             if img:
                 embed.set_image(url=img)
             await interaction.followup.send(embed=embed, ephemeral=True)
@@ -155,3 +159,11 @@ class CatchView(discord.ui.View):
                 await interaction.followup.send("❌ An error occurred while catching the card.", ephemeral=True)
             except:
                 pass
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception, item):
+        print(f"CatchView on_error: {error}")
+        self.caught = False
+        try:
+            await interaction.response.send_message(f"❌ {error}", ephemeral=True)
+        except:
+            pass

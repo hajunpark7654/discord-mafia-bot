@@ -122,6 +122,15 @@ def get_all_templates():
     return [dict(r) for r in rows]
 
 
+def delete_card_template(name):
+    conn = Connection()
+    cur = conn.execute(q("DELETE FROM card_templates WHERE LOWER(name) = LOWER(?)"), (name,))
+    conn.commit()
+    deleted = cur.rowcount
+    conn.close()
+    return deleted
+
+
 def get_template(template_id):
     conn = Connection()
     cur = conn.execute(q("SELECT * FROM card_templates WHERE id = ?"), (template_id,))
