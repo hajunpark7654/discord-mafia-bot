@@ -1,3 +1,4 @@
+import random
 from bot.database.driver import Connection, USE_PG, q
 
 
@@ -157,15 +158,39 @@ def get_template(template_id):
 
 def get_random_template():
     conn = Connection()
-    cur = conn.execute("SELECT * FROM card_templates ORDER BY RANDOM() LIMIT 1")
+    cur = conn.execute("SELECT * FROM card_templates")
     col_keys = [d[0] for d in cur.description] if USE_PG else None
-    row = cur.fetchone()
+    rows = cur.fetchall()
     conn.close()
-    if not row:
+    if not rows:
         return None
+
+    templates = []
     if USE_PG:
-        return dict(zip(col_keys, row))
-    return dict(row)
+        templates = [dict(zip(col_keys, r)) for r in rows]
+    else:
+        templates = [dict(r) for r in rows]
+
+    tiers = {"S": [], "A": [], "B": [], "C": [], "D": [], "F": []}
+    for t in templates:
+        r = t.get("rarity", "F")
+        if r in tiers:
+            tiers[r].append(t)
+        else:
+            tiers["F"].append(t)
+
+    weights = {"S": 0.001, "A": 0.079, "B": 0.12, "C": 0.20, "D": 0.25, "F": 0.35}
+    available = {k: v for k, v in tiers.items() if v}
+    if not available:
+        return None
+
+    tier_labels = list(available.keys())
+    tier_weights = [weights[t] for t in tier_labels]
+    total = sum(tier_weights)
+    tier_weights = [w / total for w in tier_weights]
+
+    chosen_tier = random.choices(tier_labels, weights=tier_weights, k=1)[0]
+    return random.choice(available[chosen_tier])
 
 
 def insert_card_instance(owner_id, template_id, health, attack, speed, h_mod, a_mod, s_mod, is_shiny, is_mythical, rarity, ovr):

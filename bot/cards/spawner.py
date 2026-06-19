@@ -151,7 +151,7 @@ class CatchView(discord.ui.View):
             if img:
                 embed.set_image(url=img)
 
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed)
         except Exception as e:
             self.caught = False
             for item in self.children:
