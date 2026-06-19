@@ -60,13 +60,7 @@ def setup_card_commands(bot: commands.Bot):
             description="\n".join(desc_parts),
             color=color,
         )
-        img = ""
-        if card["is_mythical"]:
-            img = card.get("mythical_catch_image_url") or ""
-        if not img and card["is_shiny"]:
-            img = card.get("shiny_catch_image_url") or ""
-        if not img:
-            img = card.get("image_url") or ""
+        img = card.get("image_url") or ""
         if img:
             embed.set_image(url=img)
         embed.set_footer(text="\n".join(footer_parts))
@@ -84,8 +78,8 @@ def setup_card_commands(bot: commands.Bot):
         await interaction.response.send_message(f"✅ Gave **{card['card_name']}** to {player.mention}!", ephemeral=True)
 
     @bot.tree.command(name="card_list", description="List your cards", guild=guild)
-    @app_commands.describe(sort="Sort by (rarity, shiny, mythical)")
-    async def card_list(interaction: discord.Interaction, sort: str = None):
+    @app_commands.describe(sort="Sort by (rarity, shiny, mythical)", page="Page number")
+    async def card_list(interaction: discord.Interaction, sort: str = None, page: int = 1):
         cards = get_player_cards(interaction.user.id)
         if not cards:
             await interaction.response.send_message("You don't have any cards yet!", ephemeral=True)
@@ -96,26 +90,33 @@ def setup_card_commands(bot: commands.Bot):
         elif sort == "mythical":
             cards = [c for c in cards if c["is_mythical"]] + [c for c in cards if not c["is_mythical"]]
 
+        per_page = 30
+        total_pages = max(1, (len(cards) + per_page - 1) // per_page)
+        page = max(1, min(page, total_pages))
+        start = (page - 1) * per_page
+        page_cards = cards[start:start + per_page]
+
         lines = []
-        for c in cards[:50]:
-            shiny = "✨" if c["is_shiny"] else ""
-            mythical = "🌌" if c["is_mythical"] else ""
-            tag = shiny or mythical or ""
+        for c in page_cards:
+            tag = ""
+            if c["is_shiny"]:
+                tag += "✨"
+            if c["is_mythical"]:
+                tag += "🌌"
             mods = ""
             parts = []
             if c["health_mod"]: parts.append(f"HP{c['health_mod']*100:+.0f}%")
             if c["attack_mod"]: parts.append(f"ATK{c['attack_mod']*100:+.0f}%")
             if c["speed_mod"]: parts.append(f"SPD{c['speed_mod']*100:+.0f}%")
             if parts: mods = f" ({', '.join(parts)})"
-            lines.append(f"`#{c['id']}` {tag}**{c['card_name']}** OVR:{c['ovr']}{mods}")
+            lines.append(f"`#{c['id']}` {tag}**{c['card_name']}** [{c['rarity']}] OVR:{c['ovr']}{mods}")
 
         embed = discord.Embed(
             title=f"🎴 {interaction.user.display_name}'s Cards ({len(cards)})",
-            description="\n".join(lines[:30]),
+            description="\n".join(lines),
             color=0x00FF00,
         )
-        if len(lines) > 30:
-            embed.set_footer(text=f"... and {len(lines) - 30} more")
+        embed.set_footer(text=f"Page {page}/{total_pages}")
         await interaction.response.send_message(embed=embed)
 
     @bot.tree.command(name="card_completion", description="Show card completion for a player", guild=guild)

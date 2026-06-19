@@ -87,11 +87,13 @@ class CatchView(discord.ui.View):
             return
 
         self.caught = True
-        await interaction.response.defer(ephemeral=True)
         self.disable_all_items()
         if self.message:
             await self.message.edit(content="🎴 Card caught!", view=self)
 
+        asyncio.create_task(self._process_catch(interaction, button))
+
+    async def _process_catch(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
             card = generate_card(self.template, from_mafia=False)
             card_id = insert_card_instance(
@@ -145,23 +147,29 @@ class CatchView(discord.ui.View):
             if not img and card["is_shiny"]:
                 img = self.template.get("shiny_catch_image_url") or ""
             if not img:
-                img = self.template.get("image_url") or ""
+                img = self.template.get("catch_image_url") or ""
             if img:
                 embed.set_image(url=img)
+
             await interaction.followup.send(embed=embed, ephemeral=True)
             button.disabled = True
         except Exception as e:
             self.caught = False
+            self.disable_all_items()
             print(f"Card catch error: {e}")
+            import traceback
+            traceback.print_exc()
             if self.message:
                 await self.message.edit(content="❌ Error catching card. Try again.", view=self)
             try:
-                await interaction.followup.send("❌ An error occurred while catching the card.", ephemeral=True)
+                await interaction.followup.send(f"❌ An error occurred: {e}", ephemeral=True)
             except:
                 pass
 
     async def on_error(self, interaction: discord.Interaction, error: Exception, item):
         print(f"CatchView on_error: {error}")
+        import traceback
+        traceback.print_exc()
         self.caught = False
         try:
             await interaction.response.send_message(f"❌ {error}", ephemeral=True)

@@ -19,7 +19,7 @@ def init_card_tables():
         )""")
         conn.execute("""CREATE TABLE IF NOT EXISTS card_instances (
             id SERIAL PRIMARY KEY,
-            template_id INTEGER NOT NULL REFERENCES card_templates(id),
+            template_id INTEGER NOT NULL REFERENCES card_templates(id) ON DELETE CASCADE,
             owner_id BIGINT NOT NULL,
             health INTEGER NOT NULL,
             attack INTEGER NOT NULL,
@@ -124,11 +124,22 @@ def get_all_templates():
 
 def delete_card_template(name):
     conn = Connection()
-    cur = conn.execute(q("DELETE FROM card_templates WHERE LOWER(name) = LOWER(?)"), (name,))
-    conn.commit()
-    deleted = cur.rowcount
-    conn.close()
-    return deleted
+    try:
+        cur = conn.execute(q("SELECT id FROM card_templates WHERE LOWER(name) = LOWER(?)"), (name,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return 0
+        tid = row[0]
+        conn.execute(q("DELETE FROM card_instances WHERE template_id = ?"), (tid,))
+        conn.execute(q("DELETE FROM card_templates WHERE id = ?"), (tid,))
+        conn.commit()
+        conn.close()
+        return 1
+    except Exception as e:
+        print(f"Delete template error: {e}")
+        conn.close()
+        return 0
 
 
 def get_template(template_id):
