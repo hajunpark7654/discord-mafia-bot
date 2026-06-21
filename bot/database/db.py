@@ -43,8 +43,12 @@ def get_points(user_id):
 def add_points(user_id, amount):
     try:
         conn = Connection()
-        conn.execute(q("INSERT INTO points (user_id, points) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET points = points + ?"),
-                     (user_id, amount, amount))
+        if USE_PG:
+            conn.execute("INSERT INTO points (user_id, points) VALUES (%s, %s) ON CONFLICT(user_id) DO UPDATE SET points = points.points + %s",
+                         (user_id, amount, amount))
+        else:
+            conn.execute("INSERT INTO points (user_id, points) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET points = points.points + ?",
+                         (user_id, amount, amount))
         conn.commit()
         conn.close()
         return True
