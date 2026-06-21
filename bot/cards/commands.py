@@ -148,7 +148,7 @@ def setup_card_commands(bot: commands.Bot):
                 self.update_buttons()
                 await i.response.edit_message(embed=self.build_embed(), view=self)
 
-            @discord.ui.button(label="▶", style=ButtonStyle.secondary)
+            @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
             async def next_page(self, i: discord.Interaction, b: discord.ui.Button):
                 if i.user.id != self.user_id:
                     await i.response.send_message("❌ Not your list.", ephemeral=True)
