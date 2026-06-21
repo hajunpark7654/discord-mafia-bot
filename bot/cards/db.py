@@ -179,7 +179,7 @@ def get_random_template():
         else:
             tiers["F"].append(t)
 
-    weights = {"S": 0.001, "A": 0.079, "B": 0.12, "C": 0.20, "D": 0.25, "F": 0.35}
+    weights = {"S": 0.001, "A": 0.049, "B": 0.10, "C": 0.20, "D": 0.30, "F": 0.35}
     available = {k: v for k, v in tiers.items() if v}
     if not available:
         return None

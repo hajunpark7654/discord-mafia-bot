@@ -16,13 +16,21 @@ from bot.cards.spawner import CatchView, CATCH_TIMEOUT
 
 async def card_autocomplete(interaction: discord.Interaction, current: str):
     cards = get_player_cards(interaction.user.id)
-    return [
-        app_commands.Choice(
-            name=f"{'✨' if c['is_shiny'] else ''}{'🌌' if c['is_mythical'] else ''}{c['card_name']} [{c['rarity']}]",
-            value=str(c["id"])
-        )
-        for c in cards if current.lower() in c["card_name"].lower() or current.isdigit() and str(c["id"]).startswith(current)
-    ][:25]
+    result = []
+    for c in cards:
+        if current.lower() not in c["card_name"].lower() and not (current.isdigit() and str(c["id"]).startswith(current)):
+            continue
+        mods = ""
+        parts = []
+        if c["health_mod"]: parts.append(f"HP{c['health_mod']*100:+.0f}%")
+        if c["attack_mod"]: parts.append(f"ATK{c['attack_mod']*100:+.0f}%")
+        if c["speed_mod"]: parts.append(f"SPD{c['speed_mod']*100:+.0f}%")
+        if parts: mods = f" ({', '.join(parts)})"
+        name = f"{'✨' if c['is_shiny'] else ''}{'🌌' if c['is_mythical'] else ''}{c['card_name']} [{c['rarity']}]{mods}"
+        result.append(app_commands.Choice(name=name[:100], value=str(c["id"])))
+        if len(result) >= 25:
+            break
+    return result
 
 
 def setup_card_commands(bot: commands.Bot):
@@ -87,8 +95,8 @@ def setup_card_commands(bot: commands.Bot):
         await interaction.response.send_message(f"✅ Gave **{card['card_name']}** to {player.mention}!", ephemeral=True)
 
     @bot.tree.command(name="card_list", description="List your cards", guild=guild)
-    @app_commands.describe(sort="Sort by (rarity, shiny, mythical)", page="Page number")
-    async def card_list(interaction: discord.Interaction, sort: str = None, page: int = 1):
+    @app_commands.describe(sort="Sort by (rarity, shiny, mythical)")
+    async def card_list(interaction: discord.Interaction, sort: str = None):
         cards = get_player_cards(interaction.user.id)
         if not cards:
             await interaction.response.send_message("You don't have any cards yet!", ephemeral=True)
@@ -99,34 +107,72 @@ def setup_card_commands(bot: commands.Bot):
         elif sort == "mythical":
             cards = [c for c in cards if c["is_mythical"]] + [c for c in cards if not c["is_mythical"]]
 
-        per_page = 30
-        total_pages = max(1, (len(cards) + per_page - 1) // per_page)
-        page = max(1, min(page, total_pages))
-        start = (page - 1) * per_page
-        page_cards = cards[start:start + per_page]
+        class CardListPaginator(discord.ui.View):
+            def __init__(self, cards, user_id):
+                super().__init__(timeout=120)
+                self.cards = cards
+                self.user_id = user_id
+                self.per_page = 30
+                self.total_pages = max(1, (len(cards) + self.per_page - 1) // self.per_page)
+                self.page = 1
 
-        lines = []
-        for c in page_cards:
-            tag = ""
-            if c["is_shiny"]:
-                tag += "✨"
-            if c["is_mythical"]:
-                tag += "🌌"
-            mods = ""
-            parts = []
-            if c["health_mod"]: parts.append(f"HP{c['health_mod']*100:+.0f}%")
-            if c["attack_mod"]: parts.append(f"ATK{c['attack_mod']*100:+.0f}%")
-            if c["speed_mod"]: parts.append(f"SPD{c['speed_mod']*100:+.0f}%")
-            if parts: mods = f" ({', '.join(parts)})"
-            lines.append(f"{tag}**{c['card_name']}** [{c['rarity']}] OVR:{c['ovr']}{mods}")
+            def build_embed(self):
+                start = (self.page - 1) * self.per_page
+                page_cards = self.cards[start:start + self.per_page]
+                lines = []
+                for c in page_cards:
+                    tag = ""
+                    if c["is_shiny"]: tag += "✨"
+                    if c["is_mythical"]: tag += "🌌"
+                    mods = ""
+                    parts = []
+                    if c["health_mod"]: parts.append(f"HP{c['health_mod']*100:+.0f}%")
+                    if c["attack_mod"]: parts.append(f"ATK{c['attack_mod']*100:+.0f}%")
+                    if c["speed_mod"]: parts.append(f"SPD{c['speed_mod']*100:+.0f}%")
+                    if parts: mods = f" ({', '.join(parts)})"
+                    lines.append(f"{tag}**{c['card_name']}** [{c['rarity']}] OVR:{c['ovr']}{mods}")
+                embed = discord.Embed(
+                    title=f"🎴 {interaction.user.display_name}'s Cards ({len(self.cards)})",
+                    description="\n".join(lines),
+                    color=0x00FF00,
+                )
+                embed.set_footer(text=f"Page {self.page}/{self.total_pages}")
+                return embed
 
-        embed = discord.Embed(
-            title=f"🎴 {interaction.user.display_name}'s Cards ({len(cards)})",
-            description="\n".join(lines),
-            color=0x00FF00,
-        )
-        embed.set_footer(text=f"Page {page}/{total_pages}")
-        await interaction.response.send_message(embed=embed)
+            @discord.ui.button(label="◀", style=ButtonStyle.secondary)
+            async def prev_page(self, i: discord.Interaction, b: discord.ui.Button):
+                if i.user.id != self.user_id:
+                    await i.response.send_message("❌ Not your list.", ephemeral=True)
+                    return
+                self.page = max(1, self.page - 1)
+                self.update_buttons()
+                await i.response.edit_message(embed=self.build_embed(), view=self)
+
+            @discord.ui.button(label="▶", style=ButtonStyle.secondary)
+            async def next_page(self, i: discord.Interaction, b: discord.ui.Button):
+                if i.user.id != self.user_id:
+                    await i.response.send_message("❌ Not your list.", ephemeral=True)
+                    return
+                self.page = min(self.total_pages, self.page + 1)
+                self.update_buttons()
+                await i.response.edit_message(embed=self.build_embed(), view=self)
+
+            def update_buttons(self):
+                self.children[0].disabled = self.page == 1
+                self.children[1].disabled = self.page == self.total_pages
+
+            async def on_timeout(self):
+                try:
+                    for item in self.children:
+                        item.disabled = True
+                    await self.message.edit(view=self)
+                except:
+                    pass
+
+        view = CardListPaginator(cards, interaction.user.id)
+        view.update_buttons()
+        await interaction.response.send_message(embed=view.build_embed(), view=view)
+        view.message = await interaction.original_response()
 
     @bot.tree.command(name="card_completion", description="Show card completion for a player", guild=guild)
     @app_commands.describe(player="Player to check")
@@ -272,9 +318,9 @@ def setup_card_commands(bot: commands.Bot):
         mythical_s = " 🌌" if card["is_mythical"] else ""
         await interaction.response.send_message(f"✅ Gave **{template['name']}**{shiny_s}{mythical_s} [{card['rarity']}] OVR:{card['ovr']} to {player.mention}! (ID: {cid})", ephemeral=True)
 
-    @bot.tree.command(name="spawn", description="[ADMIN] Spawn a wild card (first clicker catches it)", guild=guild)
-    @app_commands.describe(card_name="Template name", channel="Override spawn channel (defaults to /set_spawn)")
-    async def spawn_card(interaction: discord.Interaction, card_name: str, channel: discord.TextChannel = None):
+    @bot.tree.command(name="spawn", description="[ADMIN] Spawn a wild card with optional overrides", guild=guild)
+    @app_commands.describe(card_name="Template name", channel="Override spawn channel", shiny="Force shiny", mythical="Force mythical", hp_mod="HP modifier (-0.15 to 0.15)", atk_mod="ATK modifier", spd_mod="SPD modifier")
+    async def spawn_card(interaction: discord.Interaction, card_name: str, channel: discord.TextChannel = None, shiny: Optional[bool] = None, mythical: Optional[bool] = None, hp_mod: Optional[float] = None, atk_mod: Optional[float] = None, spd_mod: Optional[float] = None):
         if not is_admin(interaction):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
@@ -284,6 +330,24 @@ def setup_card_commands(bot: commands.Bot):
             await interaction.response.send_message("❌ No template found with that name.", ephemeral=True)
             return
         template = templates[0]
+
+        card = generate_card(template, from_mafia=False)
+        if shiny is not None:
+            card["is_shiny"] = shiny
+        if mythical is not None:
+            card["is_mythical"] = mythical
+        if hp_mod is not None:
+            card["health_mod"] = round(hp_mod, 4)
+        if atk_mod is not None:
+            card["attack_mod"] = round(atk_mod, 4)
+        if spd_mod is not None:
+            card["speed_mod"] = round(spd_mod, 4)
+
+        card["health"], card["attack"], card["speed"] = apply_modifiers(
+            template["health"], template["attack"], template["speed"],
+            card["health_mod"], card["attack_mod"], card["speed_mod"],
+        )
+        card["ovr"] = compute_ovr(card["health"], card["attack"], card["speed"])
 
         from bot.database.db import get_config
         spawn_channel_id = get_config("card_spawn_channel")
@@ -301,6 +365,7 @@ def setup_card_commands(bot: commands.Bot):
             embed.set_image(url=template["image_url"])
 
         view = CatchView(template, bot)
+        view.override_card = card
         msg = await spawn_channel.send(embed=embed, view=view)
         view.message = msg
 
@@ -371,4 +436,142 @@ def setup_card_commands(bot: commands.Bot):
         if templates:
             msg += "**Template names:** " + ", ".join(t["name"] for t in templates[:10]) + "\n"
         await interaction.response.send_message(msg, ephemeral=True)
+
+    @bot.tree.command(name="card_spawn_stop", description="[ADMIN] Stop card spawning", guild=guild)
+    async def card_spawn_stop(interaction: discord.Interaction):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+        from bot.database.db import set_config
+        set_config("card_spawn_enabled", "0")
+        spawner = getattr(bot, 'card_spawner', None)
+        if spawner:
+            spawner._task = None
+        await interaction.response.send_message("✅ Card spawns stopped.", ephemeral=True)
+
+    @bot.tree.command(name="card_spawn_start", description="[ADMIN] Start card spawning", guild=guild)
+    async def card_spawn_start(interaction: discord.Interaction):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+        from bot.database.db import set_config
+        set_config("card_spawn_enabled", "1")
+        spawner = getattr(bot, 'card_spawner', None)
+        if spawner and not spawner._task:
+            await spawner.start()
+        await interaction.response.send_message("✅ Card spawns started.", ephemeral=True)
+
+    @bot.tree.command(name="auction", description="[ADMIN] Start a card auction", guild=guild)
+    @app_commands.describe(card_id="Card ID to auction", min_bid="Minimum starting bid", instant_bid="Bid that instantly wins", duration="Auction duration in minutes")
+    @app_commands.autocomplete(card_id=card_autocomplete)
+    async def auction(interaction: discord.Interaction, card_id: str, min_bid: int, instant_bid: int, duration: int):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+        card = get_card_instance(int(card_id))
+        if not card:
+            await interaction.response.send_message("❌ Card not found.", ephemeral=True)
+            return
+
+        mods = []
+        if card["health_mod"]: mods.append(f"HP{card['health_mod']*100:+.0f}%")
+        if card["attack_mod"]: mods.append(f"ATK{card['attack_mod']*100:+.0f}%")
+        if card["speed_mod"]: mods.append(f"SPD{card['speed_mod']*100:+.0f}%")
+        mod_str = f" ({', '.join(mods)})" if mods else ""
+        description = (
+            f"{'✨' if card['is_shiny'] else ''}{'🌌' if card['is_mythical'] else ''}"
+            f"**{card['card_name']}** [{card['rarity']}] OVR:{card['ovr']}{mod_str}\n\n"
+            f"**Minimum bid:** {min_bid} points\n"
+            f"**Instant win:** {instant_bid} points\n"
+            f"**Time left:** {duration} minutes\n"
+            f"**Highest bid:** None"
+        )
+
+        embed = discord.Embed(title=f"🏆 Auction: {card['card_name']}", description=description, color=0xFFD700)
+        img = ""
+        if card["is_mythical"]: img = card.get("mythical_catch_image_url") or ""
+        if not img and card["is_shiny"]: img = card.get("shiny_catch_image_url") or ""
+        if not img: img = card.get("catch_image_url") or ""
+        if img: embed.set_image(url=img)
+
+        card_id_val = int(card_id)
+        transfer_card(card_id_val, interaction.user.id)
+
+        class AuctionView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=duration * 60)
+                self.highest_bidder = None
+                self.highest_amount = 0
+                self.embed = embed
+                self.message = None
+
+            async def refresh_embed(self):
+                lines = description.split("\n")
+                bid_line = f"**Highest bid:** {self.highest_amount} by <@{self.highest_bidder}>" if self.highest_bidder else "**Highest bid:** None"
+                new_desc = "\n".join(lines[:-1]) + "\n" + bid_line
+                self.embed.description = new_desc
+                if self.message:
+                    await self.message.edit(embed=self.embed)
+
+            @discord.ui.button(label="💰 Bid", style=discord.ButtonStyle.success, emoji="💰")
+            async def bid_button(self_, i: discord.Interaction, b: discord.ui.Button):
+                if self_.highest_bidder == i.user.id:
+                    await i.response.send_message("❌ You already have the highest bid!", ephemeral=True)
+                    return
+
+                class BidModal(discord.ui.Modal, title="Place your bid"):
+                    bid_amount = discord.ui.TextInput(label=f"Bid (min {min_bid})", style=discord.TextStyle.short)
+
+                    async def on_submit(self, modal_i: discord.Interaction):
+                        try:
+                            amount = int(self.bid_amount.value)
+                        except ValueError:
+                            await modal_i.response.send_message("❌ Must be a whole number.", ephemeral=True)
+                            return
+                        if amount <= self_.highest_amount:
+                            await modal_i.response.send_message(f"❌ Bid must be higher than {self_.highest_amount}.", ephemeral=True)
+                            return
+                        if amount < min_bid:
+                            await modal_i.response.send_message(f"❌ Minimum bid is {min_bid}.", ephemeral=True)
+                            return
+
+                        from bot.database.db import get_points, deduct_points
+                        balance = get_points(i.user.id)["points"]
+                        if amount > balance:
+                            await modal_i.response.send_message(f"❌ You only have {balance} points.", ephemeral=True)
+                            return
+
+                        if self_.highest_bidder:
+                            deduct_points(self_.highest_bidder, -self_.highest_amount)
+
+                        deduct_points(i.user.id, amount)
+                        self_.highest_bidder = i.user.id
+                        self_.highest_amount = amount
+                        await self_.refresh_embed()
+                        await modal_i.response.send_message(f"✅ Bid of {amount} placed!", ephemeral=True)
+
+                        if amount >= instant_bid:
+                            await self_.end_auction()
+
+                await i.response.send_modal(BidModal())
+
+            async def end_auction(self_):
+                for item in self_.children:
+                    item.disabled = True
+                if self_.highest_bidder:
+                    transfer_card(card_id_val, self_.highest_bidder)
+                    user = bot.get_user(self_.highest_bidder)
+                    mention = user.mention if user else f"<@{self_.highest_bidder}>"
+                    self_.embed.description += f"\n\n🏆 **Winner:** {mention} for {self_.highest_amount} points!"
+                else:
+                    self_.embed.description += "\n\n❌ No bids — card returned."
+                await self_.message.edit(embed=self_.embed, view=self_)
+                self_.stop()
+
+            async def on_timeout(self_):
+                await self_.end_auction()
+
+        view = AuctionView()
+        await interaction.response.send_message(embed=embed, view=view)
+        view.message = await interaction.original_response()
 

@@ -7,8 +7,8 @@ from bot.cards.db import get_random_template, insert_card_instance, get_all_temp
 from bot.database.db import get_config, set_config
 from config import GUILD_ID
 
-SPAWN_MIN_INTERVAL = 300
-SPAWN_MAX_INTERVAL = 600
+SPAWN_MIN_INTERVAL = 600
+SPAWN_MAX_INTERVAL = 1200
 CATCH_TIMEOUT = 120
 
 
@@ -37,8 +37,13 @@ class CardSpawner:
 
     async def _spawn_loop(self):
         while True:
+            if get_config("card_spawn_enabled") != "1":
+                await asyncio.sleep(60)
+                continue
             interval = random.randint(SPAWN_MIN_INTERVAL, SPAWN_MAX_INTERVAL)
             await asyncio.sleep(interval)
+            if get_config("card_spawn_enabled") != "1":
+                continue
             try:
                 await self._spawn_card()
             except Exception as e:
@@ -80,6 +85,7 @@ class CatchView(discord.ui.View):
         self.bot = bot
         self.caught = False
         self.message = None
+        self.override_card = None
 
     @discord.ui.button(label="Catch!", style=ButtonStyle.primary, emoji="🎴")
     async def catch_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -97,7 +103,7 @@ class CatchView(discord.ui.View):
 
     async def _process_catch(self, interaction: discord.Interaction):
         try:
-            card = generate_card(self.template, from_mafia=False)
+            card = self.override_card if self.override_card else generate_card(self.template, from_mafia=False)
             card_id = insert_card_instance(
                 owner_id=interaction.user.id,
                 template_id=card["template_id"],
