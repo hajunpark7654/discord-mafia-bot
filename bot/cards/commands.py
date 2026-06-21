@@ -139,7 +139,7 @@ def setup_card_commands(bot: commands.Bot):
                 embed.set_footer(text=f"Page {self.page}/{self.total_pages}")
                 return embed
 
-            @discord.ui.button(label="◀", style=ButtonStyle.secondary)
+            @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
             async def prev_page(self, i: discord.Interaction, b: discord.ui.Button):
                 if i.user.id != self.user_id:
                     await i.response.send_message("❌ Not your list.", ephemeral=True)
@@ -426,15 +426,26 @@ def setup_card_commands(bot: commands.Bot):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
         from bot.cards.db import get_all_templates
-        from bot.database.db import get_config
+        from bot.database.db import get_config, USE_PG, Connection
+        from bot.database.driver import q
         templates = get_all_templates()
         spawn_channel = get_config("card_spawn_channel")
         msg = (
+            f"**Database:** {'PostgreSQL' if USE_PG else 'SQLite'}\n"
             f"**Templates:** {len(templates)}\n"
             f"**Spawn channel:** {spawn_channel or 'Not set'}\n"
         )
         if templates:
             msg += "**Template names:** " + ", ".join(t["name"] for t in templates[:10]) + "\n"
+        try:
+            conn = Connection()
+            cur = conn.execute("SELECT COUNT(*) FROM points")
+            row = cur.fetchone()
+            conn.close()
+            count = row[0] if row else 0
+            msg += f"**Points records:** {count}\n"
+        except Exception as e:
+            msg += f"**Points DB error:** {e}\n"
         await interaction.response.send_message(msg, ephemeral=True)
 
     @bot.tree.command(name="card_spawn_stop", description="[ADMIN] Stop card spawning", guild=guild)

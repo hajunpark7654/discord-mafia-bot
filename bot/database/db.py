@@ -22,21 +22,29 @@ def init_db():
 
 
 def get_points(user_id):
-    conn = Connection()
-    cur = conn.execute(q("SELECT points, games_played, games_won FROM points WHERE user_id = ?"), (user_id,))
-    row = cur.fetchone()
-    conn.close()
-    if row:
-        return {"points": row[0], "games_played": row[1], "games_won": row[2]}
+    try:
+        conn = Connection()
+        cur = conn.execute(q("SELECT points, games_played, games_won FROM points WHERE user_id = ?"), (user_id,))
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            return {"points": row[0], "games_played": row[1], "games_won": row[2]}
+    except Exception as e:
+        print(f"get_points error: {e}")
     return {"points": 0, "games_played": 0, "games_won": 0}
 
 
 def add_points(user_id, amount):
-    conn = Connection()
-    conn.execute(q("INSERT INTO points (user_id, points) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET points = points + ?"),
-                 (user_id, amount, amount))
-    conn.commit()
-    conn.close()
+    try:
+        conn = Connection()
+        conn.execute(q("INSERT INTO points (user_id, points) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET points = points + ?"),
+                     (user_id, amount, amount))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"add_points error (user={user_id}, amount={amount}): {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def deduct_points(user_id, amount):
@@ -44,30 +52,40 @@ def deduct_points(user_id, amount):
 
 
 def increment_games_played(user_id):
-    conn = Connection()
-    conn.execute(q("INSERT INTO points (user_id, games_played) VALUES (?, 1) ON CONFLICT(user_id) DO UPDATE SET games_played = games_played + 1"),
-                 (user_id,))
-    conn.commit()
-    conn.close()
+    try:
+        conn = Connection()
+        conn.execute(q("INSERT INTO points (user_id, games_played) VALUES (?, 1) ON CONFLICT(user_id) DO UPDATE SET games_played = games_played + 1"),
+                     (user_id,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"increment_games_played error: {e}")
 
 
 def increment_games_won(user_id):
-    conn = Connection()
-    conn.execute(q("INSERT INTO points (user_id, games_won) VALUES (?, 1) ON CONFLICT(user_id) DO UPDATE SET games_won = games_won + 1"),
-                 (user_id,))
-    conn.commit()
-    conn.close()
+    try:
+        conn = Connection()
+        conn.execute(q("INSERT INTO points (user_id, games_won) VALUES (?, 1) ON CONFLICT(user_id) DO UPDATE SET games_won = games_won + 1"),
+                     (user_id,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"increment_games_won error: {e}")
 
 
 def get_leaderboard(limit=10):
-    conn = Connection()
-    cur = conn.execute(q("SELECT user_id, points, games_played, games_won FROM points ORDER BY points DESC LIMIT ?"), (limit,))
-    col_keys = [d[0] for d in cur.description] if USE_PG else None
-    rows = cur.fetchall()
-    conn.close()
-    if USE_PG:
-        return [dict(zip(col_keys, r)) for r in rows]
-    return [dict(r) for r in rows]
+    try:
+        conn = Connection()
+        cur = conn.execute(q("SELECT user_id, points, games_played, games_won FROM points ORDER BY points DESC LIMIT ?"), (limit,))
+        col_keys = [d[0] for d in cur.description] if USE_PG else None
+        rows = cur.fetchall()
+        conn.close()
+        if USE_PG:
+            return [dict(zip(col_keys, r)) for r in rows]
+        return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"get_leaderboard error: {e}")
+        return []
 
 
 def log_game(game_type, player_count, winner_team, summary_dict):
