@@ -185,22 +185,72 @@ def setup_card_commands(bot: commands.Bot):
 
         total_templates = len(get_all_templates())
         owned = sum(1 for d in data if d["total"] > 0)
-        lines = []
-        for d in data:
-            owned_str = "✅" if d["total"] > 0 else "❌"
-            extra = ""
-            if d["shiny_count"]:
-                extra += f" ✨x{d['shiny_count']}"
-            if d["mythical_count"]:
-                extra += f" 🌌x{d['mythical_count']}"
-            lines.append(f"{owned_str} **{d['name']}** — {d['total']} owned{extra}")
 
-        embed = discord.Embed(
-            title=f"📋 {target.display_name}'s Completion ({owned}/{total_templates})",
-            description="\n".join(lines[:25]),
-            color=0x00BFFF,
-        )
-        await interaction.response.send_message(embed=embed)
+        class CompletionPaginator(discord.ui.View):
+            def __init__(self, data, owned, total):
+                super().__init__(timeout=120)
+                self.data = data
+                self.owned = owned
+                self.total = total
+                self.per_page = 10
+                self.total_pages = max(1, (len(data) + self.per_page - 1) // self.per_page)
+                self.page = 1
+                self.message = None
+
+            def build_embed(self):
+                start = (self.page - 1) * self.per_page
+                page_data = self.data[start:start + self.per_page]
+                lines = []
+                for d in page_data:
+                    owned_str = "✅" if d["total"] > 0 else "❌"
+                    extra = ""
+                    if d["shiny_count"]:
+                        extra += f" ✨x{d['shiny_count']}"
+                    if d["mythical_count"]:
+                        extra += f" 🌌x{d['mythical_count']}"
+                    lines.append(f"{owned_str} **{d['name']}** [{d['rarity']}] — {d['total']} owned{extra}")
+                embed = discord.Embed(
+                    title=f"📋 {target.display_name}'s Completion ({self.owned}/{self.total})",
+                    description="\n".join(lines),
+                    color=0x00BFFF,
+                )
+                embed.set_footer(text=f"Page {self.page}/{self.total_pages}")
+                return embed
+
+            @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
+            async def prev_page(self_, i: discord.Interaction, b: discord.ui.Button):
+                if i.user.id != interaction.user.id and not is_admin(i):
+                    await i.response.send_message("❌ Not your list.", ephemeral=True)
+                    return
+                self_.page = max(1, self_.page - 1)
+                self_.update_buttons()
+                await i.response.edit_message(embed=self_.build_embed(), view=self_)
+
+            @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
+            async def next_page(self_, i: discord.Interaction, b: discord.ui.Button):
+                if i.user.id != interaction.user.id and not is_admin(i):
+                    await i.response.send_message("❌ Not your list.", ephemeral=True)
+                    return
+                self_.page = min(self_.total_pages, self_.page + 1)
+                self_.update_buttons()
+                await i.response.edit_message(embed=self_.build_embed(), view=self_)
+
+            def update_buttons(self_):
+                self_.children[0].disabled = self_.page == 1
+                self_.children[1].disabled = self_.page == self_.total_pages
+
+            async def on_timeout(self_):
+                try:
+                    for item in self_.children:
+                        item.disabled = True
+                    await self_.message.edit(view=self_)
+                except:
+                    pass
+
+        view = CompletionPaginator(data, owned, total_templates)
+        view.update_buttons()
+        await interaction.response.send_message(embed=view.build_embed(), view=view)
+        view.message = await interaction.original_response()
 
     @bot.tree.command(name="collection", description="Show missing cards", guild=guild)
     async def collection(interaction: discord.Interaction):

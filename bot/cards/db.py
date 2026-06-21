@@ -272,13 +272,19 @@ def get_owned_template_ids(owner_id):
 def get_completion(owner_id):
     conn = Connection()
     cur = conn.execute(
-        q("""SELECT ct.name, ct.id as template_id,
+        q("""SELECT ct.name, ct.id as template_id, ct.rarity,
             COUNT(ci.id) as total,
             SUM(CASE WHEN ci.is_shiny = 1 THEN 1 ELSE 0 END) as shiny_count,
             SUM(CASE WHEN ci.is_mythical = 1 THEN 1 ELSE 0 END) as mythical_count
             FROM card_templates ct
             LEFT JOIN card_instances ci ON ci.template_id = ct.id AND ci.owner_id = ?
-            GROUP BY ct.id ORDER BY ct.name"""),
+            GROUP BY ct.id
+            ORDER BY
+                CASE ct.rarity
+                    WHEN 'S' THEN 0 WHEN 'A' THEN 1 WHEN 'B' THEN 2
+                    WHEN 'C' THEN 3 WHEN 'D' THEN 4 WHEN 'F' THEN 5
+                END,
+                ct.name"""),
         (owner_id,)
     )
     col_keys = [d[0] for d in cur.description] if USE_PG else None
