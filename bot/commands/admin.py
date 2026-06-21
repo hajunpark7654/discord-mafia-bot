@@ -291,8 +291,10 @@ def setup_admin_commands(bot: commands.Bot):
         if not is_admin(interaction):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
-        add_points(user.id, amount)
-        await interaction.response.send_message(f"✅ Added {amount} points to {user.mention}.", ephemeral=True)
+        if add_points(user.id, amount):
+            await interaction.response.send_message(f"✅ Added {amount} points to {user.mention}.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"❌ DB error adding points. Check Render logs.", ephemeral=True)
 
     @bot.tree.command(name="deduct_points", description="Deduct points from a user.", guild=guild)
     @app_commands.describe(user="The user", amount="Points to deduct")
@@ -300,8 +302,10 @@ def setup_admin_commands(bot: commands.Bot):
         if not is_admin(interaction):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
-        deduct_points(user.id, amount)
-        await interaction.response.send_message(f"✅ Deducted {amount} points from {user.mention}.", ephemeral=True)
+        if deduct_points(user.id, amount):
+            await interaction.response.send_message(f"✅ Deducted {amount} points from {user.mention}.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"❌ DB error deducting points. Check Render logs.", ephemeral=True)
 
     @bot.tree.command(name="leaderboard", description="Show points leaderboard.", guild=guild)
     async def lb(interaction: discord.Interaction):

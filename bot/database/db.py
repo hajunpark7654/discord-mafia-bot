@@ -4,21 +4,27 @@ from .driver import Connection, USE_PG, q
 
 
 def init_db():
-    conn = Connection()
-    if USE_PG:
-        conn.execute("CREATE TABLE IF NOT EXISTS points (user_id BIGINT PRIMARY KEY, points INTEGER DEFAULT 0, games_played INTEGER DEFAULT 0, games_won INTEGER DEFAULT 0)")
-        conn.execute("CREATE TABLE IF NOT EXISTS game_logs (id SERIAL PRIMARY KEY, timestamp TEXT, game_type TEXT, player_count INTEGER, winner_team TEXT, summary TEXT)")
-        conn.execute("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)")
-        conn.execute("INSERT INTO config (key, value) VALUES ('autohost_enabled', '1') ON CONFLICT DO NOTHING")
-        conn.execute("INSERT INTO config (key, value) VALUES ('last_auto_game', '0') ON CONFLICT DO NOTHING")
-    else:
-        conn.execute("CREATE TABLE IF NOT EXISTS points (user_id INTEGER PRIMARY KEY, points INTEGER DEFAULT 0, games_played INTEGER DEFAULT 0, games_won INTEGER DEFAULT 0)")
-        conn.execute("CREATE TABLE IF NOT EXISTS game_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, game_type TEXT, player_count INTEGER, winner_team TEXT, summary TEXT)")
-        conn.execute("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)")
-        conn.execute(q("INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)"), ("autohost_enabled", "1"))
-        conn.execute(q("INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)"), ("last_auto_game", "0"))
-    conn.commit()
-    conn.close()
+    try:
+        conn = Connection()
+        if USE_PG:
+            conn.execute("CREATE TABLE IF NOT EXISTS points (user_id BIGINT PRIMARY KEY, points INTEGER DEFAULT 0, games_played INTEGER DEFAULT 0, games_won INTEGER DEFAULT 0)")
+            conn.execute("CREATE TABLE IF NOT EXISTS game_logs (id SERIAL PRIMARY KEY, timestamp TEXT, game_type TEXT, player_count INTEGER, winner_team TEXT, summary TEXT)")
+            conn.execute("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)")
+            conn.execute("INSERT INTO config (key, value) VALUES ('autohost_enabled', '1') ON CONFLICT DO NOTHING")
+            conn.execute("INSERT INTO config (key, value) VALUES ('last_auto_game', '0') ON CONFLICT DO NOTHING")
+        else:
+            conn.execute("CREATE TABLE IF NOT EXISTS points (user_id INTEGER PRIMARY KEY, points INTEGER DEFAULT 0, games_played INTEGER DEFAULT 0, games_won INTEGER DEFAULT 0)")
+            conn.execute("CREATE TABLE IF NOT EXISTS game_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, game_type TEXT, player_count INTEGER, winner_team TEXT, summary TEXT)")
+            conn.execute("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)")
+            conn.execute(q("INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)"), ("autohost_enabled", "1"))
+            conn.execute(q("INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)"), ("last_auto_game", "0"))
+        conn.commit()
+        conn.close()
+        print("init_db completed successfully")
+    except Exception as e:
+        print(f"init_db ERROR: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def get_points(user_id):
@@ -41,14 +47,16 @@ def add_points(user_id, amount):
                      (user_id, amount, amount))
         conn.commit()
         conn.close()
+        return True
     except Exception as e:
         print(f"add_points error (user={user_id}, amount={amount}): {e}")
         import traceback
         traceback.print_exc()
+        return False
 
 
 def deduct_points(user_id, amount):
-    add_points(user_id, -amount)
+    return add_points(user_id, -amount)
 
 
 def increment_games_played(user_id):
