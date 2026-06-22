@@ -4,10 +4,16 @@ import asyncio
 import time
 import threading
 from datetime import datetime, timedelta
-from dotenv import load_dotenv
+from pathlib import Path
 import discord
 from discord import Object
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+# Load .env file only if it exists locally (not needed on Railway)
+env_path = Path('.env')
+if env_path.exists():
+    from dotenv import load_dotenv
+    load_dotenv()
 
 from bot.client import MafiaBot
 from bot.database.db import init_db, get_config, set_config
@@ -128,7 +134,8 @@ def build_bot():
 def main():
     token = os.getenv("DISCORD_BOT_TOKEN")
     if not token:
-        print("ERROR: DISCORD_BOT_TOKEN not found in .env")
+        print("ERROR: DISCORD_BOT_TOKEN not found. Set it as an environment variable on Railway.", flush=True)
+        print("Available env vars:", [k for k in os.environ.keys() if "TOKEN" in k.upper() or "DISCORD" in k.upper()], flush=True)
         return
 
     start_health_server()
