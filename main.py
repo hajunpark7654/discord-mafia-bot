@@ -133,12 +133,29 @@ def build_bot():
 
 
 def main():
+    import subprocess
+
     def load_token():
-        # Try env vars first
+        # 1) From environment variable (standard)
         t = os.getenv("DISCORD_BOT_TOKEN") or os.getenv("TOKEN")
         if t:
             return t
-        # Try .env file (in case created via Console)
+        # 2) From shell (catches Railway v2 beta where env vars may not pass to os.environ)
+        try:
+            r = subprocess.run('echo $DISCORD_BOT_TOKEN', shell=True, capture_output=True, text=True, timeout=5)
+            t = r.stdout.strip()
+            if t:
+                return t
+        except Exception:
+            pass
+        # 3) From Railway secret files (beta v2 mounts secrets here)
+        for secret_path in ["/railway/secrets/DISCORD_BOT_TOKEN", "/etc/secrets/DISCORD_BOT_TOKEN", "/run/secrets/DISCORD_BOT_TOKEN"]:
+            p = Path(secret_path)
+            if p.exists():
+                t = p.read_text().strip()
+                if t:
+                    return t
+        # 4) From .env file (Console / Start Command)
         env_path = Path('.env')
         if env_path.exists():
             from dotenv import load_dotenv
@@ -148,11 +165,12 @@ def main():
 
     token = load_token()
     while not token:
-        print(f"ERROR: No token. CWD: {os.getcwd()}, .env exists: {Path('.env').exists()}, files: {[f for f in os.listdir('.') if f.endswith('.env')]}", flush=True)
-        if Path('.env').exists():
-            print(f".env content preview: {open('.env').read()[:80]}", flush=True)
+        print(f"ERROR: No token. CWD: {os.getcwd()}, .env exists: {Path('.env').exists()}", flush=True)
         time.sleep(30)
         token = load_token()
+
+    # Write .env so future restarts within the same session find it immediately
+    Path('.env').write_text(f"DISCORD_BOT_TOKEN={token}\n")
 
     start_health_server()
     time.sleep(2)  # let Render health check register
