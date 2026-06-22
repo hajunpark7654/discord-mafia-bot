@@ -132,26 +132,31 @@ def main():
         return
 
     start_health_server()
+    time.sleep(2)  # let Render health check register
 
-    # Wait long enough for any rate limit to fully clear
-    # Exponential backoff: 5min, 10min, 20min, 40min
-    delays = [300, 600, 1200, 2400]
+    # Try immediately first, then exponential backoff on 429
+    delays = [0, 300, 600, 1200, 2400]
     for attempt, delay in enumerate(delays):
-        print(f"Waiting {delay}s before connection attempt {attempt + 1}/4...", flush=True)
-        time.sleep(delay)
+        if delay > 0:
+            print(f"Rate limited. Waiting {delay}s before attempt {attempt+1}/{len(delays)}...", flush=True)
+            time.sleep(delay)
+        print(f"Connection attempt {attempt+1}/{len(delays)}...", flush=True)
+        bot = build_bot()
         try:
-            bot = build_bot()
             bot.run(token)
-            return
+            return  # bot connected, blocks until disconnect
         except discord.HTTPException as e:
             if e.status == 429:
-                print(f"Still rate limited (429), will wait longer...", flush=True)
+                print(f"Still rate limited ({e})", flush=True)
                 continue
             print(f"HTTP error: {e}", flush=True)
-            raise
+            return
+        except discord.LoginFailure as e:
+            print(f"Login failed (invalid token?): {e}", flush=True)
+            return
         except Exception as e:
             print(f"Fatal error: {e}", flush=True)
-            raise
+            return
 
     print("All connection attempts failed.", flush=True)
 
