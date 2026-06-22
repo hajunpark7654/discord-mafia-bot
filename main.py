@@ -117,7 +117,18 @@ async def on_ready():
         await bot.health_server_coro()
         bot.health_server_coro = None
 
-    await bot.tree.sync(guild=Object(id=GUILD_ID))
+    if get_config("commands_synced") != "1":
+        try:
+            await bot.tree.sync(guild=Object(id=GUILD_ID))
+            set_config("commands_synced", "1")
+            print("Commands synced")
+        except discord.HTTPException as e:
+            if e.status == 429:
+                print(f"Rate limited during sync, will retry on next restart. ({e})")
+            else:
+                print(f"Sync failed: {e}")
+    else:
+        print("Commands already synced, skipping")
 
     enabled = get_config("autohost_enabled")
     if enabled == "1":
