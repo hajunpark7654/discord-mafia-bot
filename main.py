@@ -1,6 +1,7 @@
 import os
 import random
 import asyncio
+import time
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import discord
@@ -21,11 +22,6 @@ from config import (
 )
 
 load_dotenv()
-
-bot = MafiaBot()
-scheduler = AsyncIOScheduler()
-card_spawner = CardSpawner(bot)
-bot.card_spawner = card_spawner
 
 PORT = int(os.getenv("PORT", 8080))
 
@@ -50,98 +46,92 @@ def start_health_server():
     return run
 
 
-async def auto_preshout():
-    enabled = get_config("autohost_enabled")
-    if enabled != "1":
-        return
+def build_bot():
+    bot = MafiaBot()
+    bot.card_spawner = CardSpawner(bot)
 
-    guild = bot.get_guild(GUILD_ID)
-    if not guild:
-        return
-    channel = guild.get_channel(PRESHOUT_CHANNEL_ID)
-    if not channel:
-        return
+    @bot.event
+    async def on_ready():
+        print(f"Bot ready: {bot.user}")
+        init_db()
+        init_card_tables()
 
-    from bot.game.engine import GameManager
-    manager = GameManager.get_instance()
-    if manager.get_game(GUILD_ID):
-        return
+        if hasattr(bot, "health_server_coro") and bot.health_server_coro:
+            await bot.health_server_coro()
+            bot.health_server_coro = None
 
-    game = manager.create_game(GUILD_ID, PRESHOUT_CHANNEL_ID, is_auto=True, is_hosted=False)
+        if get_config("commands_synced") != "1":
+            try:
+                await bot.tree.sync(guild=Object(id=GUILD_ID))
+                set_config("commands_synced", "1")
+                print("Commands synced")
+            except discord.HTTPException as e:
+                if e.status == 429:
+                    print(f"Rate limited during sync, will retry on next restart. ({e})")
+                else:
+                    print(f"Sync failed: {e}")
+        else:
+            print("Commands already synced, skipping")
 
-    embed = discord.Embed(
-        title="🕵️ Mafia — Auto Game!",
-        description=(
-            f"An automatic game is starting! Click to join.\n"
-            f"Roles are assigned by DM.\n"
-            f"Needs **{MIN_PLAYERS}+** players. {RANDOM_AUTO_JOIN_WINDOW}s to join."
-        ),
-        color=discord.Color.dark_red()
-    )
-    view = discord.ui.View()
-    join_btn = discord.ui.Button(label="Join Game", style=discord.ButtonStyle.primary, emoji="🎮")
+        enabled = get_config("autohost_enabled")
+        if enabled == "1":
+            scheduler = AsyncIOScheduler()
+            interval = random.randint(RANDOM_AUTO_MIN_INTERVAL, RANDOM_AUTO_MAX_INTERVAL)
+            from bot.game.engine import GameManager
 
-    async def join_callback(interaction):
-        if interaction.user.id in [p.user_id for p in game.players]:
-            await interaction.response.send_message("❌ Already joined!", ephemeral=True)
-            return
-        game.add_player(interaction.user)
-        await interaction.response.send_message(f"✅ Joined! ({len(game.players)} players)", ephemeral=True)
+            async def auto_preshout():
+                enabled = get_config("autohost_enabled")
+                if enabled != "1":
+                    return
+                guild = bot.get_guild(GUILD_ID)
+                if not guild:
+                    return
+                channel = guild.get_channel(PRESHOUT_CHANNEL_ID)
+                if not channel:
+                    return
+                manager = GameManager.get_instance()
+                if manager.get_game(GUILD_ID):
+                    return
+                game = manager.create_game(GUILD_ID, PRESHOUT_CHANNEL_ID, is_auto=True, is_hosted=False)
+                embed = discord.Embed(
+                    title="🕵️ Mafia — Auto Game!",
+                    description=f"An automatic game is starting! Click to join.\nRoles are assigned by DM.\nNeeds **{MIN_PLAYERS}+** players. {RANDOM_AUTO_JOIN_WINDOW}s to join.",
+                    color=discord.Color.dark_red(),
+                )
+                view = discord.ui.View()
+                join_btn = discord.ui.Button(label="Join Game", style=discord.ButtonStyle.primary, emoji="🎮")
 
-    join_btn.callback = join_callback
-    view.add_item(join_btn)
-    msg = await channel.send(embed=embed, view=view)
+                async def join_callback(interaction):
+                    if interaction.user.id in [p.user_id for p in game.players]:
+                        await interaction.response.send_message("❌ Already joined!", ephemeral=True)
+                        return
+                    game.add_player(interaction.user)
+                    await interaction.response.send_message(f"✅ Joined! ({len(game.players)} players)", ephemeral=True)
 
-    await asyncio.sleep(RANDOM_AUTO_JOIN_WINDOW)
+                join_btn.callback = join_callback
+                view.add_item(join_btn)
+                msg = await channel.send(embed=embed, view=view)
+                await asyncio.sleep(RANDOM_AUTO_JOIN_WINDOW)
+                game = manager.get_game(GUILD_ID)
+                if game and len(game.players) >= MIN_PLAYERS:
+                    await channel.send("🎮 Enough players! Starting auto game...")
+                    asyncio.create_task(game.start_game(bot))
+                elif game:
+                    await channel.send("❌ Not enough players joined. Auto-game cancelled.")
+                    manager.remove_game(GUILD_ID)
 
-    game = manager.get_game(GUILD_ID)
-    if game and len(game.players) >= MIN_PLAYERS:
-        await channel.send("🎮 Enough players! Starting auto game...")
-        asyncio.create_task(game.start_game(bot))
-    elif game:
-        await channel.send("❌ Not enough players joined. Auto-game cancelled.")
-        manager.remove_game(GUILD_ID)
+            scheduler.add_job(auto_preshout, 'interval', seconds=interval, id='auto_preshout')
+            scheduler.start()
+            print(f"Auto-host scheduler started (interval: {interval}s)")
 
+        await bot.card_spawner.start()
 
-async def try_schedule_auto():
-    await auto_preshout()
-
-
-@bot.event
-async def on_ready():
-    print(f"Bot ready: {bot.user}")
-    init_db()
-    init_card_tables()
-
-    if hasattr(bot, "health_server_coro") and bot.health_server_coro:
-        await bot.health_server_coro()
-        bot.health_server_coro = None
-
-    if get_config("commands_synced") != "1":
-        try:
-            await bot.tree.sync(guild=Object(id=GUILD_ID))
-            set_config("commands_synced", "1")
-            print("Commands synced")
-        except discord.HTTPException as e:
-            if e.status == 429:
-                print(f"Rate limited during sync, will retry on next restart. ({e})")
-            else:
-                print(f"Sync failed: {e}")
-    else:
-        print("Commands already synced, skipping")
-
-    enabled = get_config("autohost_enabled")
-    if enabled == "1":
-        interval = random.randint(RANDOM_AUTO_MIN_INTERVAL, RANDOM_AUTO_MAX_INTERVAL)
-        scheduler.add_job(try_schedule_auto, 'interval', seconds=interval, id='auto_preshout')
-        scheduler.start()
-        print(f"Auto-host scheduler started (interval: {interval}s)")
-
-    await card_spawner.start()
+    setup_admin_commands(bot)
+    setup_card_commands(bot)
+    return bot
 
 
 def main():
-    import time
     token = os.getenv("DISCORD_BOT_TOKEN")
     if not token:
         print("ERROR: DISCORD_BOT_TOKEN not found in .env")
@@ -149,13 +139,14 @@ def main():
 
     for attempt in range(5):
         try:
+            bot = build_bot()
+            bot.health_server_coro = start_health_server()
             bot.run(token)
             break
         except discord.HTTPException as e:
             if e.status == 429:
                 wait = 60 * (attempt + 1)
                 print(f"Rate limited (429), retry {attempt + 1}/5 in {wait}s...")
-                bot._closed = True
                 time.sleep(wait)
                 continue
             raise
