@@ -133,18 +133,27 @@ def main():
 
     start_health_server()
 
-    # Wait 3 minutes before connecting to let any rate limit clear
-    print("Waiting 180s before connecting to Discord...", flush=True)
-    time.sleep(180)
+    # Wait long enough for any rate limit to fully clear
+    # Exponential backoff: 5min, 10min, 20min, 40min
+    delays = [300, 600, 1200, 2400]
+    for attempt, delay in enumerate(delays):
+        print(f"Waiting {delay}s before connection attempt {attempt + 1}/4...", flush=True)
+        time.sleep(delay)
+        try:
+            bot = build_bot()
+            bot.run(token)
+            return
+        except discord.HTTPException as e:
+            if e.status == 429:
+                print(f"Still rate limited (429), will wait longer...", flush=True)
+                continue
+            print(f"HTTP error: {e}", flush=True)
+            raise
+        except Exception as e:
+            print(f"Fatal error: {e}", flush=True)
+            raise
 
-    try:
-        bot = build_bot()
-        bot.run(token)
-    except discord.HTTPException as e:
-        print(f"Discord connection failed: {e}", flush=True)
-        if e.status == 429:
-            print("Rate limited (429). Will restart and try again later.", flush=True)
-        raise
+    print("All connection attempts failed.", flush=True)
 
 
 if __name__ == "__main__":
