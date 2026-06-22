@@ -15,6 +15,9 @@ if env_path.exists():
     from dotenv import load_dotenv
     load_dotenv()
 
+import sys
+print(f"Python {sys.version} | Env vars at module level: {list(os.environ.keys())}", flush=True)
+
 from bot.client import MafiaBot
 from bot.database.db import init_db, get_config, set_config
 from bot.cards.db import init_card_tables
@@ -130,11 +133,12 @@ def build_bot():
 
 
 def main():
-    token = os.getenv("DISCORD_BOT_TOKEN")
-    if not token:
-        print("ERROR: DISCORD_BOT_TOKEN not found. Set it as an environment variable on Railway.", flush=True)
-        print("All env vars:", list(os.environ.keys()), flush=True)
-        return
+    token = os.getenv("DISCORD_BOT_TOKEN") or os.getenv("TOKEN")
+    while not token:
+        print("ERROR: DISCORD_BOT_TOKEN not found. Trying again in 30s...", flush=True)
+        print(f"Env vars at runtime: {list(os.environ.keys())}", flush=True)
+        time.sleep(30)
+        token = os.getenv("DISCORD_BOT_TOKEN") or os.getenv("TOKEN")
 
     start_health_server()
     time.sleep(2)  # let Render health check register
