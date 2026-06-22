@@ -148,8 +148,9 @@ def main():
 
     token = load_token()
     while not token:
-        print("ERROR: DISCORD_BOT_TOKEN not found. Trying again in 30s...", flush=True)
-        print(f"Env vars at runtime: {list(os.environ.keys())}", flush=True)
+        print(f"ERROR: No token. CWD: {os.getcwd()}, .env exists: {Path('.env').exists()}, files: {[f for f in os.listdir('.') if f.endswith('.env')]}", flush=True)
+        if Path('.env').exists():
+            print(f".env content preview: {open('.env').read()[:80]}", flush=True)
         time.sleep(30)
         token = load_token()
 
