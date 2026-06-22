@@ -27,8 +27,6 @@ from config import (
     RANDOM_AUTO_JOIN_WINDOW,
 )
 
-load_dotenv()
-
 PORT = int(os.getenv("PORT", 8080))
 
 
