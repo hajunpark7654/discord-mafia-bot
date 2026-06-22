@@ -54,18 +54,18 @@ def build_bot():
         init_db()
         init_card_tables()
 
-        if get_config("commands_synced") != "1":
-            try:
-                await bot.tree.sync(guild=Object(id=GUILD_ID))
+        try:
+            guild = Object(id=GUILD_ID)
+            existing = await bot.tree.fetch_commands(guild=guild)
+            if len(existing) == 0:
+                print("No guild commands found, syncing...", flush=True)
+                await bot.tree.sync(guild=guild)
                 set_config("commands_synced", "1")
-                print("Commands synced")
-            except discord.HTTPException as e:
-                if e.status == 429:
-                    print(f"Rate limited during sync, will retry on next restart. ({e})")
-                else:
-                    print(f"Sync failed: {e}")
-        else:
-            print("Commands already synced, skipping")
+                print("Commands synced", flush=True)
+            else:
+                print(f"Commands exist ({len(existing)} found), skipping sync", flush=True)
+        except discord.HTTPException as e:
+            print(f"Command sync check failed: {e}", flush=True)
 
         enabled = get_config("autohost_enabled")
         if enabled == "1":

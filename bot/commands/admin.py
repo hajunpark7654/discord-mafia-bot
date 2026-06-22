@@ -351,3 +351,16 @@ def setup_admin_commands(bot: commands.Bot):
             f"({data['games_played']} games, {data['games_won']} wins).",
             ephemeral=True
         )
+
+    @bot.tree.command(name="resync", description="[ADMIN] Force resync all slash commands", guild=guild)
+    async def resync_cmd(interaction: discord.Interaction):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await bot.tree.sync(guild=guild)
+            set_config("commands_synced", "1")
+            await interaction.followup.send("✅ Commands re-synced!", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Sync failed: {e}", ephemeral=True)
