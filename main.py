@@ -9,14 +9,9 @@ import discord
 from discord import Object
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-# Load .env file only if it exists locally (not needed on Railway)
-env_path = Path('.env')
-if env_path.exists():
+if Path('.env').exists():
     from dotenv import load_dotenv
     load_dotenv()
-
-import sys
-print(f"Python {sys.version} | Env vars at module level: {list(os.environ.keys())}", flush=True)
 
 from bot.client import MafiaBot
 from bot.database.db import init_db, get_config, set_config
@@ -35,39 +30,12 @@ PORT = int(os.getenv("PORT", 8080))
 
 def start_health_server():
     from http.server import HTTPServer, BaseHTTPRequestHandler
-    import urllib.parse
 
     class HealthHandler(BaseHTTPRequestHandler):
         def do_GET(self):
-            if self.path == "/set_token":
-                self.send_response(200)
-                self.send_header("Content-type", "text/plain")
-                self.end_headers()
-                self.wfile.write(b"Send a POST to /set_token with body: token=YOUR_TOKEN")
-                return
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b"OK")
-
-        def do_POST(self):
-            if self.path == "/set_token":
-                length = int(self.headers.get("Content-Length", 0))
-                body = self.rfile.read(length).decode()
-                params = urllib.parse.parse_qs(body)
-                token = params.get("token", [None])[0]
-                if token:
-                    Path('.env').write_text(f"DISCORD_BOT_TOKEN={token}\n")
-                    self.send_response(200)
-                    self.send_header("Content-type", "text/plain")
-                    self.end_headers()
-                    self.wfile.write(b"Token saved to .env")
-                else:
-                    self.send_response(400)
-                    self.end_headers()
-                    self.wfile.write(b"Missing 'token' field")
-                return
-            self.send_response(404)
-            self.end_headers()
 
         def log_message(self, format, *args):
             pass
@@ -160,29 +128,10 @@ def build_bot():
 
 
 def main():
-    import subprocess
-
     def load_token():
-        # 1) From environment variable (standard)
         t = os.getenv("DISCORD_BOT_TOKEN") or os.getenv("TOKEN")
         if t:
             return t
-        # 2) From shell (catches Railway v2 beta where env vars may not pass to os.environ)
-        try:
-            r = subprocess.run('echo $DISCORD_BOT_TOKEN', shell=True, capture_output=True, text=True, timeout=5)
-            t = r.stdout.strip()
-            if t:
-                return t
-        except Exception:
-            pass
-        # 3) From Railway secret files (beta v2 mounts secrets here)
-        for secret_path in ["/railway/secrets/DISCORD_BOT_TOKEN", "/etc/secrets/DISCORD_BOT_TOKEN", "/run/secrets/DISCORD_BOT_TOKEN"]:
-            p = Path(secret_path)
-            if p.exists():
-                t = p.read_text().strip()
-                if t:
-                    return t
-        # 4) From .env file (Console / Start Command)
         env_path = Path('.env')
         if env_path.exists():
             from dotenv import load_dotenv
@@ -192,17 +141,12 @@ def main():
 
     token = load_token()
     while not token:
-        print(f"ERROR: No token. CWD: {os.getcwd()}, .env exists: {Path('.env').exists()}", flush=True)
+        print("Token not found, retrying in 30s...", flush=True)
         time.sleep(30)
         token = load_token()
 
-    # Write .env so future restarts within the same session find it immediately
-    Path('.env').write_text(f"DISCORD_BOT_TOKEN={token}\n")
-
     start_health_server()
-    time.sleep(2)  # let Render health check register
 
-    # Infinite retry with exponential backoff (never gives up)
     delay = 0
     attempt = 0
     while True:
@@ -214,11 +158,11 @@ def main():
         bot = build_bot()
         try:
             bot.run(token)
-            return  # bot connected, blocks until disconnect
+            return
         except discord.HTTPException as e:
             if e.status == 429:
                 print(f"Still rate limited ({e})", flush=True)
-                delay = 300 if delay == 0 else min(delay * 2, 7200)  # 5min → 10min → ... → 2hr max
+                delay = 300 if delay == 0 else min(delay * 2, 7200)
                 continue
             print(f"HTTP error: {e}", flush=True)
             return
