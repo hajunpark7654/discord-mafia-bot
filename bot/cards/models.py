@@ -57,7 +57,7 @@ def generate_card(template, from_mafia=False):
         h_mod = a_mod = s_mod = 0.0
         is_shiny = False
         is_mythical = False
-    el        if from_mafia:
+    elif from_mafia:
         h_mod = a_mod = s_mod = 0.0
         is_shiny = random.random() < MAFIA_SHINY_CHANCE
         is_mythical = random.random() < MAFIA_MYTHICAL_CHANCE
