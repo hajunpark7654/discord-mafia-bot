@@ -117,6 +117,7 @@ class CatchView(discord.ui.View):
                 is_mythical=card["is_mythical"],
                 rarity=card["rarity"],
                 ovr=card["ovr"],
+                is_special=card.get("is_special", False),
             )
 
             mod_parts = []

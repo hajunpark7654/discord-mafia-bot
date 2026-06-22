@@ -1,8 +1,21 @@
 import asyncio
+import random
 import discord
 from bot.cards.db import get_player_cards, get_card_instance, finish_battle
 
 BATTLE_TIMEOUT = 60
+
+
+def combat_damage(attack):
+    if random.random() < 0.10:
+        return 0, False, "miss"
+    reduction = random.randint(0, 10) / 100
+    dmg = max(1, round(attack * (1 - reduction)))
+    crit = random.random() < 0.05
+    if crit:
+        dmg = round(dmg * 1.5)
+        return dmg, True, "crit"
+    return dmg, False, "hit"
 
 
 class CardBattle:
@@ -113,9 +126,13 @@ async def run_battle(bot, battle_id, player1, player2, guild):
                 if target is None:
                     target = random.choice(targets)
 
-                damage = card["attack"]
-                target["health"] -= damage
-                status = f"⚔️ **{card['card_name']}** ({owner.display_name}) attacks **{target['card_name']}** for **{damage}** damage! (HP: {max(0, target['health'])})"
+                dmg, crit, dtype = combat_damage(card["attack"])
+                if dtype == "miss":
+                    status = f"⚔️ **{card['card_name']}** ({owner.display_name}) attacks **{target['card_name']}** but **misses**!"
+                else:
+                    target["health"] -= dmg
+                    crit_text = " **CRIT!**" if crit else ""
+                    status = f"⚔️ **{card['card_name']}** ({owner.display_name}) attacks **{target['card_name']}** for **{dmg}** damage!{crit_text} (HP: {max(0, target['health'])})"
                 if channel:
                     await channel.send(status)
                 else:

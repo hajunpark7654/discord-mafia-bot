@@ -115,6 +115,8 @@ POINTS = {
     "premature_end": 3,
 }
 
+MAFIA_CARD_CHANCE = 0.60
+
 ROLE_DISTRIBUTION = {
     5:  {"mafia_killing": 1, "mafia_support": 0, "neutral": 0, "doctor": 1, "sheriff": 0, "town": 3, "town_support": 0},
     6:  {"mafia_killing": 1, "mafia_support": 0, "neutral": 1, "doctor": 1, "sheriff": 1, "town": 2, "town_support": 0},

@@ -8,7 +8,7 @@ from config import (
     ADMIN_USER_ID, PRESHOUT_CHANNEL_ID, NOMINATIONS_REQUIRED,
     PRESHOUT_AUTO_CANCEL_IDLE, PRESHOUT_AUTO_CANCEL_JOINED,
     TEAMS, TEAM_DISPLAY_ORDER, FACTION_MAFIA, FACTION_TOWN, FACTION_NEUTRAL,
-    NIGHT_DEATH_MESSAGES, VOTE_OUT_MESSAGES, ACCUSATION_MESSAGES,
+    NIGHT_DEATH_MESSAGES, VOTE_OUT_MESSAGES, ACCUSATION_MESSAGES, MAFIA_CARD_CHANCE,
 )
 from bot.game.player import Player
 from bot.game.role import assign_roles, get_role_team, get_role_faction, is_killing_role, get_points_key
@@ -513,8 +513,8 @@ class GameInstance:
                 await asyncio.sleep(1)
                 await self.town_square.send(f"🎯 {p.mention} was exposed as the **Bounty Hunter** — they killed the wrong target!")
 
-        if actual_killer and random.random() < 0.5:
-            if random.random() < 0.5:
+        if not self.test_mode and actual_killer and random.random() < 0.5:
+            if random.random() < 0.65:
                 suspect = actual_killer
             else:
                 suspects = [p for p in self.alive_players if p.user_id != actual_killer.user_id]
@@ -700,11 +700,11 @@ class GameInstance:
                         elif p.role == "survivor":
                             self._award_points_for_player(p, "survivor_win")
 
-                    if random.random() < 0.20:
+                    if random.random() < MAFIA_CARD_CHANCE:
                         try:
-                            from bot.cards.db import get_random_template, insert_card_instance
+                            from bot.cards.db import get_random_template, get_random_template_for_mafia, insert_card_instance
                             from bot.cards.models import generate_card
-                            tpl = get_random_template()
+                            tpl = get_random_template_for_mafia()
                             if tpl:
                                 card = generate_card(tpl, from_mafia=True)
                                 cid = insert_card_instance(
@@ -720,6 +720,7 @@ class GameInstance:
                                     is_mythical=card["is_mythical"],
                                     rarity=card["rarity"],
                                     ovr=card["ovr"],
+                                    is_special=card.get("is_special", False),
                                 )
                                 if not p.is_dummy:
                                     try:

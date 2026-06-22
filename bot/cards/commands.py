@@ -318,6 +318,7 @@ def setup_card_commands(bot: commands.Bot):
             is_mythical=mythical,
             rarity=rarity,
             ovr=ovr,
+            is_special=template.get("is_special", False),
         )
         await interaction.response.send_message(f"✅ Redeemed **{name}** for {player.mention}! (ID: {cid})", ephemeral=True)
 
@@ -363,6 +364,7 @@ def setup_card_commands(bot: commands.Bot):
             is_mythical=card["is_mythical"],
             rarity=card["rarity"],
             ovr=card["ovr"],
+            is_special=card.get("is_special", False),
         )
         shiny_s = " ✨" if card["is_shiny"] else ""
         mythical_s = " 🌌" if card["is_mythical"] else ""
@@ -443,6 +445,35 @@ def setup_card_commands(bot: commands.Bot):
         add_card_template(name, health, attack, speed, rarity, image_url, catch_image_url, shiny_catch_image_url, mythical_catch_image_url, quote="")
         await interaction.response.send_message(f"✅ Added card template: **{name}** [{rarity}] OVR:{ovr} HP:{health} ATK:{attack} SPD:{speed}", ephemeral=True)
 
+    @bot.tree.command(name="card_add_special_template", description="[ADMIN] Add a special card template", guild=guild)
+    @app_commands.describe(name="Card name", health="Base HP", attack="Base ATK", speed="Base SPD", image_url="Spawn image URL", catch_image_url="Card art URL")
+    async def card_add_special_template_cmd(interaction: discord.Interaction, name: str, health: int = 1000, attack: int = 500, speed: int = 200, image_url: str = "", catch_image_url: str = ""):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+        existing = [t for t in get_all_templates() if t["name"].lower() == name.lower()]
+        if existing:
+            await interaction.response.send_message("❌ Template already exists.", ephemeral=True)
+            return
+        ovr = compute_ovr(health, attack, speed)
+        rarity = compute_rarity(ovr)
+        add_card_template(name, health, attack, speed, rarity, image_url, catch_image_url, is_special=True)
+        await interaction.response.send_message(f"✅ Added SPECIAL template: **{name}** [{rarity}] OVR:{ovr}", ephemeral=True)
+
+    @bot.tree.command(name="special_spawn_toggle", description="[ADMIN] Toggle spawning of special cards", guild=guild)
+    async def special_spawn_toggle(interaction: discord.Interaction):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+        from bot.database.db import get_config, set_config
+        current = get_config("special_spawn_enabled")
+        if current == "1":
+            set_config("special_spawn_enabled", "0")
+            await interaction.response.send_message("❌ Special card spawning disabled.", ephemeral=True)
+        else:
+            set_config("special_spawn_enabled", "1")
+            await interaction.response.send_message("✅ Special card spawning enabled.", ephemeral=True)
+
     @bot.tree.command(name="card_delete_template", description="[ADMIN] Delete a card template", guild=guild)
     @app_commands.describe(name="Template name to delete")
     async def card_delete_template_cmd(interaction: discord.Interaction, name: str):
@@ -521,6 +552,21 @@ def setup_card_commands(bot: commands.Bot):
         if spawner and not spawner._task:
             await spawner.start()
         await interaction.response.send_message("✅ Card spawns started.", ephemeral=True)
+
+    @bot.tree.command(name="boss_battle", description="[ADMIN] Start a boss battle with a card", guild=guild)
+    @app_commands.describe(card_name="Template name to fight as boss")
+    async def boss_battle(interaction: discord.Interaction, card_name: str):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+        templates = [t for t in get_all_templates() if t["name"].lower() == card_name.lower()]
+        if not templates:
+            await interaction.response.send_message("❌ No template found.", ephemeral=True)
+            return
+        from bot.cards.boss_battle import BossBattle
+        bb = BossBattle(bot, interaction.channel, templates[0], interaction.user)
+        await interaction.response.send_message("👹 Boss battle starting...", ephemeral=True)
+        asyncio.create_task(bb.run())
 
     @bot.tree.command(name="auction", description="[ADMIN] Start a card auction", guild=guild)
     @app_commands.describe(card_id="Card ID to auction", min_bid="Minimum starting bid", instant_bid="Bid that instantly wins", duration="Auction duration in minutes")
@@ -628,6 +674,20 @@ def setup_card_commands(bot: commands.Bot):
                     self_.embed.description += "\n\n❌ No bids — card returned."
                 await self_.message.edit(embed=self_.embed, view=self_)
                 self_.stop()
+
+            @discord.ui.button(label="Cancel Auction", style=discord.ButtonStyle.danger, emoji="⛔")
+            async def cancel_auction(self_, i: discord.Interaction, b: discord.ui.Button):
+                if i.user.id != ADMIN_USER_ID and not is_admin(i):
+                    await i.response.send_message("❌ Only the admin can cancel.", ephemeral=True)
+                    return
+                if self_.highest_bidder:
+                    deduct_points(self_.highest_bidder, -self_.highest_amount)
+                for item in self_.children:
+                    item.disabled = True
+                self_.embed.description += "\n\n⛔ Auction cancelled by admin."
+                await self_.message.edit(embed=self_.embed, view=self_)
+                self_.stop()
+                await i.response.send_message("✅ Auction cancelled.", ephemeral=True)
 
             async def on_timeout(self_):
                 await self_.end_auction()

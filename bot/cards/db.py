@@ -45,6 +45,8 @@ def init_card_tables():
         )""")
         conn.execute("ALTER TABLE card_templates ADD COLUMN IF NOT EXISTS shiny_catch_image_url TEXT DEFAULT ''")
         conn.execute("ALTER TABLE card_templates ADD COLUMN IF NOT EXISTS mythical_catch_image_url TEXT DEFAULT ''")
+        conn.execute("ALTER TABLE card_templates ADD COLUMN IF NOT EXISTS is_special INTEGER DEFAULT 0")
+        conn.execute("ALTER TABLE card_instances ADD COLUMN IF NOT EXISTS is_special INTEGER DEFAULT 0")
     else:
         conn.execute("""CREATE TABLE IF NOT EXISTS card_templates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,7 +59,8 @@ def init_card_tables():
             catch_image_url TEXT DEFAULT '',
             shiny_catch_image_url TEXT DEFAULT '',
             mythical_catch_image_url TEXT DEFAULT '',
-            quote TEXT DEFAULT ''
+            quote TEXT DEFAULT '',
+            is_special INTEGER DEFAULT 0
         )""")
         conn.execute("""CREATE TABLE IF NOT EXISTS card_instances (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,6 +74,7 @@ def init_card_tables():
             speed_mod REAL DEFAULT 0,
             is_shiny INTEGER DEFAULT 0,
             is_mythical INTEGER DEFAULT 0,
+            is_special INTEGER DEFAULT 0,
             rarity TEXT NOT NULL,
             ovr INTEGER DEFAULT 0,
             obtained_at TEXT DEFAULT (datetime('now')),
@@ -96,18 +100,26 @@ def init_card_tables():
             conn.execute("ALTER TABLE card_templates ADD COLUMN mythical_catch_image_url TEXT DEFAULT ''")
         except:
             pass
+        try:
+            conn.execute("ALTER TABLE card_templates ADD COLUMN is_special INTEGER DEFAULT 0")
+        except:
+            pass
+        try:
+            conn.execute("ALTER TABLE card_instances ADD COLUMN is_special INTEGER DEFAULT 0")
+        except:
+            pass
         conn.commit()
     conn.close()
 
 
-def add_card_template(name, health=1000, attack=500, speed=200, rarity="F", image_url="", catch_image_url="", shiny_catch_image_url="", mythical_catch_image_url="", quote=""):
+def add_card_template(name, health=1000, attack=500, speed=200, rarity="F", image_url="", catch_image_url="", shiny_catch_image_url="", mythical_catch_image_url="", quote="", is_special=False):
     conn = Connection()
     if USE_PG:
-        conn.execute(q("INSERT INTO card_templates (name, health, attack, speed, rarity, image_url, catch_image_url, shiny_catch_image_url, mythical_catch_image_url, quote) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (name) DO NOTHING"),
-                     (name, health, attack, speed, rarity, image_url, catch_image_url, shiny_catch_image_url, mythical_catch_image_url, quote))
+        conn.execute(q("INSERT INTO card_templates (name, health, attack, speed, rarity, image_url, catch_image_url, shiny_catch_image_url, mythical_catch_image_url, quote, is_special) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (name) DO NOTHING"),
+                     (name, health, attack, speed, rarity, image_url, catch_image_url, shiny_catch_image_url, mythical_catch_image_url, quote, 1 if is_special else 0))
     else:
-        conn.execute(q("INSERT OR IGNORE INTO card_templates (name, health, attack, speed, rarity, image_url, catch_image_url, shiny_catch_image_url, mythical_catch_image_url, quote) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
-                     (name, health, attack, speed, rarity, image_url, catch_image_url, shiny_catch_image_url, mythical_catch_image_url, quote))
+        conn.execute(q("INSERT OR IGNORE INTO card_templates (name, health, attack, speed, rarity, image_url, catch_image_url, shiny_catch_image_url, mythical_catch_image_url, quote, is_special) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
+                     (name, health, attack, speed, rarity, image_url, catch_image_url, shiny_catch_image_url, mythical_catch_image_url, quote, 1 if is_special else 0))
     conn.commit()
     conn.close()
 
@@ -157,8 +169,21 @@ def get_template(template_id):
 
 
 def get_random_template():
+    from bot.database.db import get_config
+    special_enabled = get_config("special_spawn_enabled") == "1"
+
     conn = Connection()
-    cur = conn.execute("SELECT * FROM card_templates")
+    if USE_PG:
+        if special_enabled:
+            cur = conn.execute("SELECT * FROM card_templates")
+        else:
+            cur = conn.execute("SELECT * FROM card_templates WHERE is_special = 0 OR is_special IS NULL")
+    else:
+        if special_enabled:
+            cur = conn.execute("SELECT * FROM card_templates")
+        else:
+            cur = conn.execute("SELECT * FROM card_templates WHERE is_special = 0 OR is_special IS NULL")
+
     col_keys = [d[0] for d in cur.description] if USE_PG else None
     rows = cur.fetchall()
     conn.close()
@@ -193,18 +218,55 @@ def get_random_template():
     return random.choice(available[chosen_tier])
 
 
-def insert_card_instance(owner_id, template_id, health, attack, speed, h_mod, a_mod, s_mod, is_shiny, is_mythical, rarity, ovr):
+def get_random_template_for_mafia():
+    conn = Connection()
+    cur = conn.execute("SELECT * FROM card_templates WHERE is_special = 0 OR is_special IS NULL")
+    col_keys = [d[0] for d in cur.description] if USE_PG else None
+    rows = cur.fetchall()
+    conn.close()
+    if not rows:
+        return None
+
+    templates = []
+    if USE_PG:
+        templates = [dict(zip(col_keys, r)) for r in rows]
+    else:
+        templates = [dict(r) for r in rows]
+
+    tiers = {"S": [], "A": [], "B": [], "C": [], "D": [], "F": []}
+    for t in templates:
+        r = t.get("rarity", "F")
+        if r in tiers:
+            tiers[r].append(t)
+        else:
+            tiers["F"].append(t)
+
+    weights = {"S": 0.001, "A": 0.049, "B": 0.10, "C": 0.20, "D": 0.30, "F": 0.35}
+    available = {k: v for k, v in tiers.items() if v}
+    if not available:
+        return None
+
+    tier_labels = list(available.keys())
+    tier_weights = [weights[t] for t in tier_labels]
+    total = sum(tier_weights)
+    tier_weights = [w / total for w in tier_weights]
+
+    chosen_tier = random.choices(tier_labels, weights=tier_weights, k=1)[0]
+    return random.choice(available[chosen_tier])
+
+
+def insert_card_instance(owner_id, template_id, health, attack, speed, h_mod, a_mod, s_mod, is_shiny, is_mythical, rarity, ovr, is_special=0):
     conn = Connection()
     if USE_PG:
         cur = conn.execute(
-            q("INSERT INTO card_instances (owner_id, template_id, health, attack, speed, health_mod, attack_mod, speed_mod, is_shiny, is_mythical, rarity, ovr) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"),
-            (owner_id, template_id, health, attack, speed, h_mod, a_mod, s_mod, 1 if is_shiny else 0, 1 if is_mythical else 0, rarity, ovr)
+            q("INSERT INTO card_instances (owner_id, template_id, health, attack, speed, health_mod, attack_mod, speed_mod, is_shiny, is_mythical, is_special, rarity, ovr) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"),
+            (owner_id, template_id, health, attack, speed, h_mod, a_mod, s_mod, 1 if is_shiny else 0, 1 if is_mythical else 0, 1 if is_special else 0, rarity, ovr)
         )
         card_id = cur.fetchone()[0]
     else:
         cur = conn.execute(
-            q("INSERT INTO card_instances (owner_id, template_id, health, attack, speed, health_mod, attack_mod, speed_mod, is_shiny, is_mythical, rarity, ovr) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
-            (owner_id, template_id, health, attack, speed, h_mod, a_mod, s_mod, 1 if is_shiny else 0, 1 if is_mythical else 0, rarity, ovr)
+            q("INSERT INTO card_instances (owner_id, template_id, health, attack, speed, health_mod, attack_mod, speed_mod, is_shiny, is_mythical, is_special, rarity, ovr) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
+            (owner_id, template_id, health, attack, speed, h_mod, a_mod, s_mod, 1 if is_shiny else 0, 1 if is_mythical else 0, 1 if is_special else 0, rarity, ovr)
         )
         card_id = cur.lastrowid
     conn.commit()
@@ -220,6 +282,9 @@ def get_player_cards(owner_id):
             JOIN card_templates ct ON ci.template_id = ct.id
             WHERE ci.owner_id = ?
             ORDER BY
+                CASE WHEN ci.is_special = 1 THEN 0 ELSE 1 END,
+                ci.is_shiny DESC,
+                ci.is_mythical DESC,
                 CASE ci.rarity
                     WHEN 'S' THEN 0 WHEN 'A' THEN 1 WHEN 'B' THEN 2
                     WHEN 'C' THEN 3 WHEN 'D' THEN 4 WHEN 'F' THEN 5
@@ -280,6 +345,7 @@ def get_completion(owner_id):
             LEFT JOIN card_instances ci ON ci.template_id = ct.id AND ci.owner_id = ?
             GROUP BY ct.id
             ORDER BY
+                CASE WHEN ct.is_special = 1 THEN 0 ELSE 1 END,
                 CASE ct.rarity
                     WHEN 'S' THEN 0 WHEN 'A' THEN 1 WHEN 'B' THEN 2
                     WHEN 'C' THEN 3 WHEN 'D' THEN 4 WHEN 'F' THEN 5
