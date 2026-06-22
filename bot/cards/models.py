@@ -15,15 +15,15 @@ def compute_ovr(health, attack, speed):
 
 
 def compute_rarity(ovr):
-    if ovr >= 11000:
+    if ovr >= 9000:
         return "S"
-    elif ovr >= 9000:
+    elif ovr >= 7500:
         return "A"
-    elif ovr >= 7000:
+    elif ovr >= 6500:
         return "B"
     elif ovr >= 5000:
         return "C"
-    elif ovr >= 3000:
+    elif ovr >= 4000:
         return "D"
     return "F"
 
@@ -57,12 +57,12 @@ def generate_card(template, from_mafia=False):
         h_mod = a_mod = s_mod = 0.0
         is_shiny = False
         is_mythical = False
-    elif from_mafia:
+    el        if from_mafia:
         h_mod = a_mod = s_mod = 0.0
         is_shiny = random.random() < MAFIA_SHINY_CHANCE
         is_mythical = random.random() < MAFIA_MYTHICAL_CHANCE
         # Guarantee B tier or higher by bumping stats if needed
-        min_ovr = 7000
+        min_ovr = 6500
         if compute_ovr(health, attack, speed) < min_ovr:
             scale = min_ovr / compute_ovr(health, attack, speed)
             health = max(1, round(health * scale))
