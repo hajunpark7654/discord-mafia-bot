@@ -2,11 +2,11 @@ import os
 import random
 import asyncio
 import time
+import threading
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import discord
 from discord import Object
-import aiohttp
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot.client import MafiaBot
@@ -27,23 +27,21 @@ PORT = int(os.getenv("PORT", 8080))
 
 
 def start_health_server():
-    from aiohttp import web
+    from http.server import HTTPServer, BaseHTTPRequestHandler
 
-    async def handler(request):
-        return web.Response(text="OK")
+    class HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK")
 
-    app = web.Application()
-    app.router.add_get("/", handler)
-    app.router.add_get("/health", handler)
-    runner = web.AppRunner(app)
+        def log_message(self, format, *args):
+            pass
 
-    async def run():
-        await runner.setup()
-        site = web.TCPSite(runner, "0.0.0.0", PORT)
-        await site.start()
-        print(f"Health server running on port {PORT}")
-
-    return run
+    server = HTTPServer(("0.0.0.0", PORT), HealthHandler)
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    print(f"Health server running on port {PORT}")
 
 
 def build_bot():
@@ -55,10 +53,6 @@ def build_bot():
         print(f"Bot ready: {bot.user}")
         init_db()
         init_card_tables()
-
-        if hasattr(bot, "health_server_coro") and bot.health_server_coro:
-            await bot.health_server_coro()
-            bot.health_server_coro = None
 
         if get_config("commands_synced") != "1":
             try:
@@ -137,10 +131,11 @@ def main():
         print("ERROR: DISCORD_BOT_TOKEN not found in .env")
         return
 
+    start_health_server()
+
     for attempt in range(5):
         try:
             bot = build_bot()
-            bot.health_server_coro = start_health_server()
             bot.run(token)
             break
         except discord.HTTPException as e:
