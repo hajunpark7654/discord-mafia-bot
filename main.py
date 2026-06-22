@@ -41,7 +41,7 @@ def start_health_server():
     server = HTTPServer(("0.0.0.0", PORT), HealthHandler)
     t = threading.Thread(target=server.serve_forever, daemon=True)
     t.start()
-    print(f"Health server running on port {PORT}")
+    print(f"Health server running on port {PORT}", flush=True)
 
 
 def build_bot():
@@ -50,7 +50,7 @@ def build_bot():
 
     @bot.event
     async def on_ready():
-        print(f"Bot ready: {bot.user}")
+        print(f"Bot ready: {bot.user}", flush=True)
         init_db()
         init_card_tables()
 
@@ -133,6 +133,10 @@ def main():
 
     start_health_server()
 
+    # Wait 2 minutes before first connection to let any rate limit clear
+    print("Waiting 120s before connecting to Discord...", flush=True)
+    time.sleep(120)
+
     for attempt in range(5):
         try:
             bot = build_bot()
@@ -141,12 +145,12 @@ def main():
         except discord.HTTPException as e:
             if e.status == 429:
                 wait = 60 * (attempt + 1)
-                print(f"Rate limited (429), retry {attempt + 1}/5 in {wait}s...")
+                print(f"Rate limited (429), retry {attempt + 1}/5 in {wait}s...", flush=True)
                 time.sleep(wait)
                 continue
             raise
         except Exception as e:
-            print(f"Fatal error: {e}")
+            print(f"Fatal error: {e}", flush=True)
             raise
 
 
