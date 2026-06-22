@@ -15,7 +15,8 @@ if Path('.env').exists():
 
 from bot.client import MafiaBot
 from bot.database.db import init_db, get_config, set_config
-from bot.cards.db import init_card_tables
+from bot.cards.db import init_card_tables, get_all_templates
+from bot.cards.seed import seed_card_templates
 from bot.cards.spawner import CardSpawner
 from bot.commands.admin import setup_admin_commands
 from bot.cards.commands import setup_card_commands
@@ -55,6 +56,10 @@ def build_bot():
         print(f"Bot ready: {bot.user}", flush=True)
         init_db()
         init_card_tables()
+        if not get_all_templates():
+            print("No card templates found. Seeding database...", flush=True)
+            seed_card_templates()
+            print("Card templates seeded.", flush=True)
 
         try:
             guild = Object(id=GUILD_ID)
