@@ -133,12 +133,25 @@ def build_bot():
 
 
 def main():
-    token = os.getenv("DISCORD_BOT_TOKEN") or os.getenv("TOKEN")
+    def load_token():
+        # Try env vars first
+        t = os.getenv("DISCORD_BOT_TOKEN") or os.getenv("TOKEN")
+        if t:
+            return t
+        # Try .env file (in case created via Console)
+        env_path = Path('.env')
+        if env_path.exists():
+            from dotenv import load_dotenv
+            load_dotenv()
+            return os.getenv("DISCORD_BOT_TOKEN") or os.getenv("TOKEN")
+        return None
+
+    token = load_token()
     while not token:
         print("ERROR: DISCORD_BOT_TOKEN not found. Trying again in 30s...", flush=True)
         print(f"Env vars at runtime: {list(os.environ.keys())}", flush=True)
         time.sleep(30)
-        token = os.getenv("DISCORD_BOT_TOKEN") or os.getenv("TOKEN")
+        token = load_token()
 
     start_health_server()
     time.sleep(2)  # let Render health check register
