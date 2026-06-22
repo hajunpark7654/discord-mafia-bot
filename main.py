@@ -134,13 +134,15 @@ def main():
     start_health_server()
     time.sleep(2)  # let Render health check register
 
-    # Try immediately first, then exponential backoff on 429
-    delays = [0, 300, 600, 1200, 2400]
-    for attempt, delay in enumerate(delays):
+    # Infinite retry with exponential backoff (never gives up)
+    delay = 0
+    attempt = 0
+    while True:
+        attempt += 1
         if delay > 0:
-            print(f"Rate limited. Waiting {delay}s before attempt {attempt+1}/{len(delays)}...", flush=True)
+            print(f"Rate limited. Waiting {delay}s before attempt {attempt}...", flush=True)
             time.sleep(delay)
-        print(f"Connection attempt {attempt+1}/{len(delays)}...", flush=True)
+        print(f"Connection attempt {attempt}...", flush=True)
         bot = build_bot()
         try:
             bot.run(token)
@@ -148,6 +150,7 @@ def main():
         except discord.HTTPException as e:
             if e.status == 429:
                 print(f"Still rate limited ({e})", flush=True)
+                delay = 300 if delay == 0 else min(delay * 2, 7200)  # 5min → 10min → ... → 2hr max
                 continue
             print(f"HTTP error: {e}", flush=True)
             return
@@ -157,8 +160,6 @@ def main():
         except Exception as e:
             print(f"Fatal error: {e}", flush=True)
             return
-
-    print("All connection attempts failed.", flush=True)
 
 
 if __name__ == "__main__":
