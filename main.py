@@ -141,14 +141,27 @@ async def on_ready():
 
 
 def main():
-    setup_admin_commands(bot)
-    setup_card_commands(bot)
+    import time
     token = os.getenv("DISCORD_BOT_TOKEN")
     if not token:
         print("ERROR: DISCORD_BOT_TOKEN not found in .env")
         return
-    bot.health_server_coro = start_health_server()
-    bot.run(token)
+
+    for attempt in range(5):
+        try:
+            bot.run(token)
+            break
+        except discord.HTTPException as e:
+            if e.status == 429:
+                wait = 60 * (attempt + 1)
+                print(f"Rate limited (429), retry {attempt + 1}/5 in {wait}s...")
+                bot._closed = True
+                time.sleep(wait)
+                continue
+            raise
+        except Exception as e:
+            print(f"Fatal error: {e}")
+            raise
 
 
 if __name__ == "__main__":
