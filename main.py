@@ -35,12 +35,39 @@ PORT = int(os.getenv("PORT", 8080))
 
 def start_health_server():
     from http.server import HTTPServer, BaseHTTPRequestHandler
+    import urllib.parse
 
     class HealthHandler(BaseHTTPRequestHandler):
         def do_GET(self):
+            if self.path == "/set_token":
+                self.send_response(200)
+                self.send_header("Content-type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"Send a POST to /set_token with body: token=YOUR_TOKEN")
+                return
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b"OK")
+
+        def do_POST(self):
+            if self.path == "/set_token":
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode()
+                params = urllib.parse.parse_qs(body)
+                token = params.get("token", [None])[0]
+                if token:
+                    Path('.env').write_text(f"DISCORD_BOT_TOKEN={token}\n")
+                    self.send_response(200)
+                    self.send_header("Content-type", "text/plain")
+                    self.end_headers()
+                    self.wfile.write(b"Token saved to .env")
+                else:
+                    self.send_response(400)
+                    self.end_headers()
+                    self.wfile.write(b"Missing 'token' field")
+                return
+            self.send_response(404)
+            self.end_headers()
 
         def log_message(self, format, *args):
             pass
