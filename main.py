@@ -133,7 +133,7 @@ def main():
     token = os.getenv("DISCORD_BOT_TOKEN")
     if not token:
         print("ERROR: DISCORD_BOT_TOKEN not found. Set it as an environment variable on Railway.", flush=True)
-        print("Available env vars:", [k for k in os.environ.keys() if "TOKEN" in k.upper() or "DISCORD" in k.upper()], flush=True)
+        print("All env vars:", list(os.environ.keys()), flush=True)
         return
 
     start_health_server()
