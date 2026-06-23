@@ -126,13 +126,20 @@ def add_card_template(name, health=1000, attack=500, speed=200, rarity="F", imag
 
 def get_all_templates():
     conn = Connection()
-    cur = conn.execute("SELECT * FROM card_templates")
-    col_keys = [d[0] for d in cur.description] if USE_PG else None
-    rows = cur.fetchall()
-    conn.close()
-    if USE_PG:
-        return [dict(zip(col_keys, r)) for r in rows]
-    return [dict(r) for r in rows]
+    try:
+        cur = conn.execute("SELECT * FROM card_templates")
+        col_keys = [d[0] for d in cur.description] if USE_PG else None
+        rows = cur.fetchall()
+        conn.close()
+        if USE_PG:
+            return [dict(zip(col_keys, r)) for r in rows]
+        return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"get_all_templates error: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        conn.close()
+        raise
 
 
 def delete_card_template(name):

@@ -53,8 +53,7 @@ def build_bot():
     @bot.event
     async def on_ready():
         print(f"Bot ready: {bot.user}", flush=True)
-        init_db()
-        init_card_tables()
+
 
         try:
             guild = Object(id=GUILD_ID)

@@ -11,6 +11,10 @@ class MafiaBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents, allowed_mentions=discord.AllowedMentions(everyone=True))
 
     async def setup_hook(self):
+        from bot.database.db import init_db
+        from bot.cards.db import init_card_tables
+        init_db()
+        init_card_tables()
         await self.tree.sync(guild=discord.Object(id=GUILD_ID))
 
     async def on_ready(self):

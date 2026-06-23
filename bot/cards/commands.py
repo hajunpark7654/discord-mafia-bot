@@ -34,15 +34,19 @@ async def card_autocomplete(interaction: discord.Interaction, current: str):
 
 
 async def template_autocomplete(interaction: discord.Interaction, current: str):
-    templates = get_all_templates()
-    if not templates:
+    try:
+        templates = get_all_templates()
+        if not templates:
+            return []
+        current_lower = current.lower()
+        matches = [t for t in templates if current_lower in t["name"].lower()]
+        return [
+            app_commands.Choice(name=f"{t['name']} [{t['rarity']}]", value=t["name"])
+            for t in matches[:25]
+        ]
+    except Exception as e:
+        print(f"template_autocomplete error: {e}", flush=True)
         return []
-    current_lower = current.lower()
-    matches = [t for t in templates if current_lower in t["name"].lower()]
-    return [
-        app_commands.Choice(name=f"{t['name']} [{t['rarity']}]", value=t["name"])
-        for t in matches[:25]
-    ]
 
 
 def setup_card_commands(bot: commands.Bot):
