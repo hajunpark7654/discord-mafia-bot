@@ -571,6 +571,25 @@ def setup_card_commands(bot: commands.Bot):
             await spawner.start()
         await interaction.response.send_message("✅ Card spawns started.", ephemeral=True)
 
+    @bot.tree.command(name="card_diag", description="[ADMIN] Debug card database status", guild=guild)
+    async def card_diag(interaction: discord.Interaction):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+        try:
+            templates = get_all_templates()
+            t_count = len(templates)
+            t_names = [t["name"] for t in templates[:10]]
+            from bot.cards.db import get_player_cards
+            cards = get_player_cards(interaction.user.id)
+            c_count = len(cards)
+            msg = f"**Templates:** {t_count}\n**Your cards:** {c_count}\n**Sample names:** {', '.join(t_names)}{'...' if t_count > 10 else ''}"
+            await interaction.response.send_message(msg, ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+            import traceback
+            traceback.print_exc()
+
     @bot.tree.command(name="boss_battle", description="[ADMIN] Start a boss battle with a card", guild=guild)
     @app_commands.describe(card_name="Template name to fight as boss")
     @app_commands.autocomplete(card_name=template_autocomplete)
