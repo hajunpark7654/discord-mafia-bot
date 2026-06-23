@@ -577,12 +577,32 @@ def setup_card_commands(bot: commands.Bot):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
         try:
-            templates = get_all_templates()
-            t_count = len(templates)
-            t_names = [t["name"] for t in templates[:10]]
-            from bot.cards.db import get_player_cards
-            cards = get_player_cards(interaction.user.id)
-            c_count = len(cards)
+            t_count = 0
+            t_names = []
+            c_count = 0
+            from bot.database.driver import USE_PG
+            if USE_PG:
+                import psycopg2
+                import os
+                conn = psycopg2.connect(os.environ["DATABASE_URL"])
+                cur = conn.cursor()
+                cur.execute("SELECT name FROM card_templates ORDER BY id")
+                rows = cur.fetchall()
+                t_count = len(rows)
+                t_names = [r[0] for r in rows[:10]]
+                cur.execute("SELECT COUNT(*) FROM card_instances WHERE owner_id = %s", (interaction.user.id,))
+                c_count = cur.fetchone()[0]
+                conn.close()
+            else:
+                import sqlite3
+                conn = sqlite3.connect("mafia_bot.db")
+                cur = conn.execute("SELECT name FROM card_templates ORDER BY id")
+                rows = cur.fetchall()
+                t_count = len(rows)
+                t_names = [r[0] for r in rows[:10]]
+                cur.execute("SELECT COUNT(*) FROM card_instances WHERE owner_id = ?", (interaction.user.id,))
+                c_count = cur.fetchone()[0]
+                conn.close()
             msg = f"**Templates:** {t_count}\n**Your cards:** {c_count}\n**Sample names:** {', '.join(t_names)}{'...' if t_count > 10 else ''}"
             await interaction.response.send_message(msg, ephemeral=True)
         except Exception as e:
