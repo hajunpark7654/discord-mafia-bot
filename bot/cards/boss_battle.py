@@ -91,7 +91,10 @@ class BossBattle:
                 self.player_cards[pid] = cards[0]
             member = self.bot.get_user(pid)
             if member and cards:
-                await member.send(f"⚔️ Boss Battle! Your card **{cards[0]['card_name']}** will fight!")
+                try:
+                    await member.send(f"⚔️ Boss Battle! Your card **{cards[0]['card_name']}** will fight!")
+                except:
+                    pass
 
         await msg.edit(content=f"⚔️ **Boss Battle Starting!** {len(self.players)} players. Boss HP: {self.boss_hp}", embed=None, view=None)
 
@@ -200,12 +203,18 @@ class BossBattle:
                     if member:
                         shiny_s = " ✨" if card["is_shiny"] else ""
                         mythical_s = " 🌌" if card["is_mythical"] else ""
-                        await member.send(f"🏆 MVP! You won the boss card **{card['card_name']}** [{card['rarity']}]{shiny_s}{mythical_s} and **30** points!")
+                        try:
+                            await member.send(f"🏆 MVP! You won the boss card **{card['card_name']}** [{card['rarity']}]{shiny_s}{mythical_s} and **30** points!")
+                        except:
+                            pass
                 else:
                     add_points(pid, 20)
                     member = self.bot.get_user(pid)
                     if member:
-                        await member.send(f"🏆 You helped defeat the boss! +**20** points!")
+                        try:
+                            await member.send(f"🏆 You helped defeat the boss! +**20** points!")
+                        except:
+                            pass
         else:
             await self.channel.send(f"💀 **Defeat!** All players have fallen.")
             summary = "\n".join(

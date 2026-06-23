@@ -8,7 +8,7 @@ class MafiaBot(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.members = True
-        super().__init__(command_prefix="!", intents=intents)
+        super().__init__(command_prefix="!", intents=intents, allowed_mentions=discord.AllowedMentions(everyone=True))
 
     async def setup_hook(self):
         await self.tree.sync(guild=discord.Object(id=GUILD_ID))
