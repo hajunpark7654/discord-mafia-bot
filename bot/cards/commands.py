@@ -34,19 +34,15 @@ async def card_autocomplete(interaction: discord.Interaction, current: str):
 
 
 async def template_autocomplete(interaction: discord.Interaction, current: str):
-    try:
-        templates = get_all_templates()
-        if not templates:
-            return []
-        current_lower = current.lower()
-        matches = [t for t in templates if current_lower in t["name"].lower()]
-        return [
-            app_commands.Choice(name=f"{t['name']} [{t['rarity']}]", value=t["name"])
-            for t in matches[:25]
-        ]
-    except Exception as e:
-        print(f"template_autocomplete error: {e}", flush=True)
+    templates = get_all_templates()
+    if not templates:
         return []
+    current_lower = current.lower()
+    matches = [t for t in templates if current_lower in t["name"].lower()]
+    return [
+        app_commands.Choice(name=f"{t['name']} [{t['rarity']}]", value=t["name"])
+        for t in matches[:25]
+    ]
 
 
 def setup_card_commands(bot: commands.Bot):
@@ -344,14 +340,9 @@ def setup_card_commands(bot: commands.Bot):
         if not is_admin(interaction):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
-        all_templates = get_all_templates()
-        if not all_templates:
-            await interaction.response.send_message("❌ No templates exist in the database. Use /card_add_template first.", ephemeral=True)
-            return
-        templates = [t for t in all_templates if t["name"].lower().strip() == card_name.lower().strip()]
+        templates = [t for t in get_all_templates() if t["name"].lower().strip() == card_name.lower().strip()]
         if not templates:
-            names = [t["name"] for t in all_templates[:5]]
-            await interaction.response.send_message(f"❌ No template found with that name. Existing templates: {', '.join(names)}{'...' if len(all_templates) > 5 else ''}", ephemeral=True)
+            await interaction.response.send_message("❌ No template found with that name.", ephemeral=True)
             return
         template = templates[0]
         card = generate_card(template, from_mafia=False)
@@ -399,14 +390,9 @@ def setup_card_commands(bot: commands.Bot):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
 
-        all_templates = get_all_templates()
-        if not all_templates:
-            await interaction.response.send_message("❌ No templates exist in the database. Use /card_add_template first.", ephemeral=True)
-            return
-        templates = [t for t in all_templates if t["name"].lower().strip() == card_name.lower().strip()]
+        templates = [t for t in get_all_templates() if t["name"].lower().strip() == card_name.lower().strip()]
         if not templates:
-            names = [t["name"] for t in all_templates[:5]]
-            await interaction.response.send_message(f"❌ No template found with that name. Existing templates: {', '.join(names)}{'...' if len(all_templates) > 5 else ''}", ephemeral=True)
+            await interaction.response.send_message("❌ No template found with that name.", ephemeral=True)
             return
         template = templates[0]
 
@@ -588,14 +574,9 @@ def setup_card_commands(bot: commands.Bot):
         if not is_admin(interaction):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
-        all_templates = get_all_templates()
-        if not all_templates:
-            await interaction.response.send_message("❌ No templates exist in the database. Use /card_add_template first.", ephemeral=True)
-            return
-        templates = [t for t in all_templates if t["name"].lower().strip() == card_name.lower().strip()]
+        templates = [t for t in get_all_templates() if t["name"].lower().strip() == card_name.lower().strip()]
         if not templates:
-            names = [t["name"] for t in all_templates[:5]]
-            await interaction.response.send_message(f"❌ No template found with that name. Existing templates: {', '.join(names)}{'...' if len(all_templates) > 5 else ''}", ephemeral=True)
+            await interaction.response.send_message("❌ No template found with that name.", ephemeral=True)
             return
         from bot.cards.boss_battle import BossBattle
         bb = BossBattle(bot, interaction.channel, templates[0], interaction.user)
