@@ -566,7 +566,16 @@ def setup_card_commands(bot: commands.Bot):
         from bot.cards.boss_battle import BossBattle
         bb = BossBattle(bot, interaction.channel, templates[0], interaction.user)
         await interaction.response.send_message("👹 Boss battle starting...", ephemeral=True)
-        asyncio.create_task(bb.run())
+
+        async def run_boss_battle():
+            try:
+                await bb.run()
+            except Exception as e:
+                print(f"Boss battle error: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+
+        asyncio.create_task(run_boss_battle())
 
     @bot.tree.command(name="auction", description="[ADMIN] Start a card auction", guild=guild)
     @app_commands.describe(card_id="Card ID to auction", min_bid="Minimum starting bid", instant_bid="Bid that instantly wins", duration="Auction duration in minutes")

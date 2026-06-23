@@ -41,37 +41,41 @@ class BossBattle:
         self.boss_hp = self.boss_max_hp
 
     async def run(self):
-        embed = discord.Embed(
-            title=f"👹 Boss Battle: {self.template['name']}!",
-            description=(
-                f"A wild **{self.template['name']}** appears with massive power!\n\n"
-                f"Click join to bring your best card!\n"
-                f"5 minutes to join."
-            ),
-            color=0xFF0000,
-        )
-        view = discord.ui.View()
-        join_button = discord.ui.Button(label="Join Battle", style=ButtonStyle.primary, emoji="⚔️")
+        try:
+            embed = discord.Embed(
+                title=f"👹 Boss Battle: {self.template['name']}!",
+                description=(
+                    f"A wild **{self.template['name']}** appears with massive power!\n\n"
+                    f"Click join to bring your best card!\n"
+                    f"5 minutes to join."
+                ),
+                color=0xFF0000,
+            )
+            view = discord.ui.View()
+            join_button = discord.ui.Button(label="Join Battle", style=ButtonStyle.primary, emoji="⚔️")
 
-        async def join_cb(interaction):
-            if interaction.user.id in self.players:
-                await interaction.response.send_message("❌ Already joined!", ephemeral=True)
-                return
-            cards = get_player_cards(interaction.user.id)
-            if not cards:
-                await interaction.response.send_message("❌ You need at least 1 card!", ephemeral=True)
-                return
-            self.players.append(interaction.user.id)
-            count = len(self.players)
-            await interaction.response.send_message(f"✅ Joined! ({count} players)", ephemeral=True)
+            async def join_cb(interaction):
+                if interaction.user.id in self.players:
+                    await interaction.response.send_message("❌ Already joined!", ephemeral=True)
+                    return
+                cards = get_player_cards(interaction.user.id)
+                if not cards:
+                    await interaction.response.send_message("❌ You need at least 1 card!", ephemeral=True)
+                    return
+                self.players.append(interaction.user.id)
+                count = len(self.players)
+                await interaction.response.send_message(f"✅ Joined! ({count} players)", ephemeral=True)
 
-        join_button.callback = join_cb
-        view.add_item(join_button)
+            join_button.callback = join_cb
+            view.add_item(join_button)
 
-        msg = await self.channel.send(
-            content="@everyone 👹 A **Boss Battle** has started! Join to fight!",
-            embed=embed, view=view
-        )
+            msg = await self.channel.send(
+                content="@everyone 👹 A **Boss Battle** has started! Join to fight!",
+                embed=embed, view=view
+            )
+        except Exception as e:
+            print(f"Boss battle setup failed: {e}", flush=True)
+            return
 
         await asyncio.sleep(300)
 
