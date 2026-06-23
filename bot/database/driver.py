@@ -1,7 +1,26 @@
 import os
 import sqlite3
 
-USE_PG = os.getenv("DATABASE_URL") is not None
+_DATABASE_URL = None
+
+# Railway Beta v2: variables may not be in os.environ, check secret files
+_env_val = os.getenv("DATABASE_URL")
+if _env_val:
+    _DATABASE_URL = _env_val
+else:
+    for path in ("/etc/secrets/DATABASE_URL", "/etc/secrets/DATABASE_URL.txt"):
+        try:
+            with open(path) as f:
+                _DATABASE_URL = f.read().strip()
+                break
+        except:
+            pass
+    if not _DATABASE_URL:
+        import dotenv
+        dotenv.load_dotenv()
+        _DATABASE_URL = os.getenv("DATABASE_URL")
+
+USE_PG = _DATABASE_URL is not None
 
 if USE_PG:
     import psycopg2
@@ -13,7 +32,7 @@ DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__)
 class Connection:
     def __init__(self):
         if USE_PG:
-            self._raw = psycopg2.connect(os.environ["DATABASE_URL"])
+            self._raw = psycopg2.connect(_DATABASE_URL)
             self._raw.autocommit = False
         else:
             self._raw = sqlite3.connect(DB_PATH)
