@@ -33,6 +33,16 @@ async def card_autocomplete(interaction: discord.Interaction, current: str):
     return result
 
 
+async def template_autocomplete(interaction: discord.Interaction, current: str):
+    templates = get_all_templates()
+    current_lower = current.lower()
+    matches = [t for t in templates if current_lower in t["name"].lower()]
+    return [
+        app_commands.Choice(name=f"{t['name']} [{t['rarity']}]", value=t["name"])
+        for t in matches[:25]
+    ]
+
+
 def setup_card_commands(bot: commands.Bot):
     guild = discord.Object(id=GUILD_ID)
 
@@ -328,7 +338,7 @@ def setup_card_commands(bot: commands.Bot):
         if not is_admin(interaction):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
-        templates = [t for t in get_all_templates() if t["name"].lower() == card_name.lower()]
+        templates = [t for t in get_all_templates() if t["name"].lower().strip() == card_name.lower().strip()]
         if not templates:
             await interaction.response.send_message("❌ No template found with that name.", ephemeral=True)
             return
@@ -372,12 +382,13 @@ def setup_card_commands(bot: commands.Bot):
 
     @bot.tree.command(name="spawn", description="[ADMIN] Spawn a wild card with optional overrides", guild=guild)
     @app_commands.describe(card_name="Template name", channel="Override spawn channel", shiny="Force shiny", mythical="Force mythical", hp_mod="HP modifier (-0.15 to 0.15)", atk_mod="ATK modifier", spd_mod="SPD modifier")
+    @app_commands.autocomplete(card_name=template_autocomplete)
     async def spawn_card(interaction: discord.Interaction, card_name: str, channel: discord.TextChannel = None, shiny: Optional[bool] = None, mythical: Optional[bool] = None, hp_mod: Optional[float] = None, atk_mod: Optional[float] = None, spd_mod: Optional[float] = None):
         if not is_admin(interaction):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
 
-        templates = [t for t in get_all_templates() if t["name"].lower() == card_name.lower()]
+        templates = [t for t in get_all_templates() if t["name"].lower().strip() == card_name.lower().strip()]
         if not templates:
             await interaction.response.send_message("❌ No template found with that name.", ephemeral=True)
             return
@@ -476,6 +487,7 @@ def setup_card_commands(bot: commands.Bot):
 
     @bot.tree.command(name="card_delete_template", description="[ADMIN] Delete a card template", guild=guild)
     @app_commands.describe(name="Template name to delete")
+    @app_commands.autocomplete(name=template_autocomplete)
     async def card_delete_template_cmd(interaction: discord.Interaction, name: str):
         if not is_admin(interaction):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
@@ -555,11 +567,12 @@ def setup_card_commands(bot: commands.Bot):
 
     @bot.tree.command(name="boss_battle", description="[ADMIN] Start a boss battle with a card", guild=guild)
     @app_commands.describe(card_name="Template name to fight as boss")
+    @app_commands.autocomplete(card_name=template_autocomplete)
     async def boss_battle(interaction: discord.Interaction, card_name: str):
         if not is_admin(interaction):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
-        templates = [t for t in get_all_templates() if t["name"].lower() == card_name.lower()]
+        templates = [t for t in get_all_templates() if t["name"].lower().strip() == card_name.lower().strip()]
         if not templates:
             await interaction.response.send_message("❌ No template found.", ephemeral=True)
             return
