@@ -56,7 +56,11 @@ def setup_card_commands(bot: commands.Bot):
     @app_commands.describe(card_id="Card ID to inspect")
     @app_commands.autocomplete(card_id=card_autocomplete)
     async def card_info(interaction: discord.Interaction, card_id: str):
-        card = get_card_instance(int(card_id))
+        try:
+            card = get_card_instance(int(card_id))
+        except ValueError:
+            await interaction.response.send_message("❌ Invalid card ID.", ephemeral=True)
+            return
         if not card:
             await interaction.response.send_message("❌ Card not found.", ephemeral=True)
             return
