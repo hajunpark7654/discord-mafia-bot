@@ -2,20 +2,9 @@ import asyncio
 import random
 import discord
 from discord import ButtonStyle
-from bot.cards.db import get_random_template, insert_card_instance, get_player_cards
-from bot.cards.models import generate_card, compute_ovr
+from bot.cards.db import insert_card_instance, get_player_cards
+from bot.cards.models import generate_card, compute_ovr, combat_damage
 from bot.database.db import add_points
-
-
-def combat_damage(attack):
-    if random.random() < 0.10:
-        return 0, False
-    reduction = random.randint(0, 10) / 100
-    dmg = max(1, round(attack * (1 - reduction)))
-    crit = random.random() < 0.05
-    if crit:
-        dmg = round(dmg * 1.5)
-    return dmg, crit
 
 
 class BossBattle:
@@ -39,6 +28,10 @@ class BossBattle:
         multiplier = 7 if count < 6 else 10
         self.boss_max_hp = self.template["health"] * multiplier
         self.boss_hp = self.boss_max_hp
+
+    def _mention(self, pid_or_user_id):
+        m = self.bot.get_user(pid_or_user_id)
+        return m.mention if m else f"<@{pid_or_user_id}>"
 
     async def run(self):
         try:
@@ -108,18 +101,21 @@ class BossBattle:
 
             self.turn += 1
 
+            # Boss attacks: picks random target with SPD-based dodge
             target = random.choice(alive)
-            dmg, crit = combat_damage(self.boss_atk)
             card = self.player_cards.get(target, {})
-            card["health"] = card.get("health", 1) - dmg
-            crit_text = " **CRIT!**" if crit else ""
-            if dmg > 0:
-                await self.channel.send(f"👹 **{self.template['name']}** attacks {self.bot.get_user(target).mention if self.bot.get_user(target) else '<@'+str(target)+'>'}'s **{card.get('card_name','?')}** for **{dmg}** damage!{crit_text}")
+            dmg, crit, dtype, dodged = combat_damage(self.boss_atk, card.get("speed", 0))
+            if dtype == "miss":
+                await self.channel.send(f"👹 **{self.template['name']}** attacks {self._mention(target)}'s **{card.get('card_name','?')}** but **misses**!")
+            elif dtype == "dodge":
+                await self.channel.send(f"👹 **{self.template['name']}** attacks {self._mention(target)}'s **{card.get('card_name','?')}** but it **dodges**!")
             else:
-                await self.channel.send(f"👹 **{self.template['name']}** attacks but misses {self.bot.get_user(target).mention if self.bot.get_user(target) else '<@'+str(target)+'>'}'s **{card.get('card_name','?')}**!")
+                card["health"] = card.get("health", 1) - dmg
+                crit_text = " **CRIT!**" if crit else ""
+                await self.channel.send(f"👹 **{self.template['name']}** attacks {self._mention(target)}'s **{card.get('card_name','?')}** for **{dmg}** damage!{crit_text}")
 
             if card.get("health", 0) <= 0:
-                await self.channel.send(f"💀 {self.bot.get_user(target).mention if self.bot.get_user(target) else '<@'+str(target)+'>'}'s **{card.get('card_name','?')}** has been defeated!")
+                await self.channel.send(f"💀 {self._mention(target)}'s **{card.get('card_name','?')}** has been defeated!")
 
             if self.turn % 3 == 0 and self.boss_hp > 0:
                 heal = min(1000, self.boss_max_hp - self.boss_hp)
@@ -142,28 +138,27 @@ class BossBattle:
             if self.boss_hp <= 0:
                 break
 
-            for pid in alive:
-                pc = self.player_cards.get(pid, {})
-                if pc.get("health", 0) <= 0:
-                    continue
+            # Player turns: ordered by card SPD descending
+            spd_order = sorted(
+                [(pid, self.player_cards[pid]) for pid in alive if self.player_cards[pid].get("health", 0) > 0],
+                key=lambda x: x[1].get("speed", 0), reverse=True
+            )
+            for pid, pc in spd_order:
                 atk = pc.get("attack", 1)
                 stack_atk = 0
                 for _ in range(2):
-                    dmg, crit = combat_damage(atk)
-                    if dmg == 0:
-                        self.boss_hp -= 0
-                    else:
-                        actual = min(dmg, self.boss_hp)
-                        self.boss_hp -= actual
-                        stack_atk += actual
-                        self.damage_dealt[pid] += actual
+                    dmg, crit, dtype, dodged = combat_damage(atk)
+                    if dtype in ("miss", "dodge"):
+                        continue
+                    actual = min(dmg, self.boss_hp)
+                    self.boss_hp -= actual
+                    stack_atk += actual
+                    self.damage_dealt[pid] += actual
                     if self.boss_hp <= 0:
                         break
                 if stack_atk > 0:
-                    member = self.bot.get_user(pid)
-                    mention = member.mention if member else f"<@{pid}>"
-                    crit_text = "" if not any(True for _ in range(0) if random.random() < 0) else ""
-                    await self.channel.send(f"⚔️ {mention}'s **{pc['card_name']}** deals **{stack_atk}** damage to **{self.template['name']}**! (Boss HP: {max(0, self.boss_hp)})")
+                    crit_text = " **CRIT!**" if any(crit for _ in range(2) if False) else ""
+                    await self.channel.send(f"⚔️ {self._mention(pid)}'s **{pc['card_name']}** deals **{stack_atk}** damage to **{self.template['name']}**! (Boss HP: {max(0, self.boss_hp)})")
                 if self.boss_hp <= 0:
                     break
 
@@ -171,18 +166,19 @@ class BossBattle:
             winner = max(self.damage_dealt, key=self.damage_dealt.get)
             await self.channel.send(f"🎉 **Victory!** The boss has been defeated!")
             summary = "\n".join(
-                f"• {self.bot.get_user(pid).mention if self.bot.get_user(pid) else '<@'+str(pid)+'>'}: {dmg} damage"
+                f"• {self._mention(pid)}: {dmg} damage"
                 for pid, dmg in sorted(self.damage_dealt.items(), key=lambda x: -x[1])
             )
             await self.channel.send(f"**Damage Summary:**\n{summary}")
 
+            # All participants get 20 points; MVP gets the card
             for pid in self.players:
+                member = self.bot.get_user(pid)
                 if pid == winner:
-                    add_points(pid, 30)
+                    add_points(pid, 20)
                     card = generate_card(self.template, from_mafia=False)
-                    card["is_shiny"] = random.random() < 0.35
+                    card["is_shiny"] = random.random() < 0.25
                     card["is_mythical"] = random.random() < 0.05
-                    card["health"], card["attack"], card["speed"] = card["health"], card["attack"], card["speed"]
                     card["ovr"] = compute_ovr(card["health"], card["attack"], card["speed"])
                     cid = insert_card_instance(
                         owner_id=pid,
@@ -199,17 +195,15 @@ class BossBattle:
                         ovr=card["ovr"],
                         is_special=card.get("is_special", False),
                     )
-                    member = self.bot.get_user(pid)
                     if member:
                         shiny_s = " ✨" if card["is_shiny"] else ""
                         mythical_s = " 🌌" if card["is_mythical"] else ""
                         try:
-                            await member.send(f"🏆 MVP! You won the boss card **{card['card_name']}** [{card['rarity']}]{shiny_s}{mythical_s} and **30** points!")
+                            await member.send(f"🏆 MVP! You defeated the boss and won **{card['card_name']}** [{card['rarity']}]{shiny_s}{mythical_s} +**20** points!")
                         except:
                             pass
                 else:
                     add_points(pid, 20)
-                    member = self.bot.get_user(pid)
                     if member:
                         try:
                             await member.send(f"🏆 You helped defeat the boss! +**20** points!")

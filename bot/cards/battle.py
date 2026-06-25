@@ -2,20 +2,9 @@ import asyncio
 import random
 import discord
 from bot.cards.db import get_player_cards, get_card_instance, finish_battle
+from bot.cards.models import combat_damage
 
 BATTLE_TIMEOUT = 60
-
-
-def combat_damage(attack):
-    if random.random() < 0.10:
-        return 0, False, "miss"
-    reduction = random.randint(0, 10) / 100
-    dmg = max(1, round(attack * (1 - reduction)))
-    crit = random.random() < 0.05
-    if crit:
-        dmg = round(dmg * 1.5)
-        return dmg, True, "crit"
-    return dmg, False, "hit"
 
 
 class CardBattle:
@@ -27,13 +16,25 @@ class CardBattle:
         self._build_turn_order()
 
     def _build_turn_order(self):
-        all_cards = []
-        for uid, data in self.players.items():
-            for card in data["cards"]:
-                card["_owner"] = uid
-                all_cards.append(card)
-        all_cards.sort(key=lambda c: c["speed"], reverse=True)
-        self.turn_order = all_cards
+        pids = list(self.players.keys())
+        # Separate by player, sort each by SPD descending
+        p1_cards = sorted(self.players[pids[0]]["cards"], key=lambda c: c["speed"], reverse=True)
+        p2_cards = sorted(self.players[pids[1]]["cards"], key=lambda c: c["speed"], reverse=True)
+        # Interleave: highest SPD overall goes first, then alternate
+        order = []
+        i1 = i2 = 0
+        turn_p1 = p1_cards[0]["speed"] >= p2_cards[0]["speed"] if p1_cards and p2_cards else bool(p1_cards)
+        while i1 < len(p1_cards) or i2 < len(p2_cards):
+            if turn_p1 and i1 < len(p1_cards):
+                p1_cards[i1]["_owner"] = pids[0]
+                order.append(p1_cards[i1])
+                i1 += 1
+            elif not turn_p1 and i2 < len(p2_cards):
+                p2_cards[i2]["_owner"] = pids[1]
+                order.append(p2_cards[i2])
+                i2 += 1
+            turn_p1 = not turn_p1
+        self.turn_order = order
 
     def alive_cards(self, owner_id):
         return [c for c in self.players[owner_id]["cards"] if c["health"] > 0]
@@ -126,9 +127,11 @@ async def run_battle(bot, battle_id, player1, player2, guild):
                 if target is None:
                     target = random.choice(targets)
 
-                dmg, crit, dtype = combat_damage(card["attack"])
+                dmg, crit, dtype, dodged = combat_damage(card["attack"], target.get("speed", 0))
                 if dtype == "miss":
                     status = f"⚔️ **{card['card_name']}** ({owner.display_name}) attacks **{target['card_name']}** but **misses**!"
+                elif dtype == "dodge":
+                    status = f"⚔️ **{card['card_name']}** ({owner.display_name}) attacks **{target['card_name']}** but it **dodges**!"
                 else:
                     target["health"] -= dmg
                     crit_text = " **CRIT!**" if crit else ""

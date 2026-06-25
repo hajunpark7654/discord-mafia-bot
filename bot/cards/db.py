@@ -248,13 +248,21 @@ def get_random_template_for_mafia():
         else:
             tiers["F"].append(t)
 
-    weights = {"S": 0.005, "A": 0.095, "B": 0.15, "C": 0.20, "D": 0.25, "F": 0.30}
-    available = {k: v for k, v in tiers.items() if v}
+    # Mafia: only B/A/S tiers, weighted 60/35/5
+    mafia_weights = {"B": 0.60, "A": 0.35, "S": 0.05}
+    available = {k: v for k, v in tiers.items() if v and k in mafia_weights}
     if not available:
-        return None
+        # fallback to all tiers if none of B/A/S exist
+        all_weights = {"S": 0.005, "A": 0.095, "B": 0.15, "C": 0.20, "D": 0.25, "F": 0.30}
+        available = {k: v for k, v in tiers.items() if v}
+        if not available:
+            return None
+        tier_labels = list(available.keys())
+        tier_weights = [all_weights[t] for t in tier_labels]
+    else:
+        tier_labels = list(available.keys())
+        tier_weights = [mafia_weights[t] for t in tier_labels]
 
-    tier_labels = list(available.keys())
-    tier_weights = [weights[t] for t in tier_labels]
     total = sum(tier_weights)
     tier_weights = [w / total for w in tier_weights]
 
