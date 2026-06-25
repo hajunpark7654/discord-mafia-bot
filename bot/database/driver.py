@@ -1,7 +1,7 @@
 import os
 import sqlite3
 
-_DATABASE_URL = None
+_DATABASE_URL = None  # exported for diagnostics
 
 # Railway Beta v2: variables may not be in os.environ, check secret files
 _env_val = os.getenv("DATABASE_URL")

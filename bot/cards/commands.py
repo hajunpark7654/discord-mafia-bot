@@ -581,13 +581,34 @@ def setup_card_commands(bot: commands.Bot):
             await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
             return
         try:
-            from bot.database.driver import USE_PG
+            import os
+            from bot.database.driver import _DATABASE_URL, USE_PG
+            env_db = os.environ.get("DATABASE_URL", "❌ NOT SET")
+            # Check secret files
+            secrets_found = []
+            for p in ("/etc/secrets/DATABASE_URL", "/etc/secrets/DATABASE_URL.txt", "/run/secrets/DATABASE_URL"):
+                if os.path.exists(p):
+                    try:
+                        with open(p) as f:
+                            val = f.read().strip()[:50]
+                            secrets_found.append(f"{p}: {val}...")
+                    except:
+                        secrets_found.append(f"{p}: ❌ unreadable")
+            secrets_info = "; ".join(secrets_found) if secrets_found else "❌ none found"
             templates = get_all_templates()
             cards = get_player_cards(interaction.user.id)
             t_count = len(templates)
             t_names = [t["name"] for t in templates[:10]]
             c_count = len(cards)
-            msg = f"**PG mode:** {USE_PG}\n**Templates:** {t_count}\n**Your cards:** {c_count}\n**Sample names:** {', '.join(t_names)}{'...' if t_count > 10 else ''}"
+            msg = (
+                f"**PG mode:** {USE_PG}\n"
+                f"**Env DATABASE_URL:** {env_db}\n"
+                f"**Secret files:** {secrets_info}\n"
+                f"**_DATABASE_URL (first 30):** {str(_DATABASE_URL)[:30] if _DATABASE_URL else 'None'}\n"
+                f"**Templates:** {t_count}\n"
+                f"**Your cards:** {c_count}\n"
+                f"**Sample names:** {', '.join(t_names)}{'...' if t_count > 10 else ''}"
+            )
             await interaction.response.send_message(msg, ephemeral=True)
         except Exception as e:
             await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
