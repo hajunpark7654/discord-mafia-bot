@@ -5,10 +5,14 @@ _DATABASE_URL = None  # exported for diagnostics
 
 # Railway Beta v2: variables may not be in os.environ, check secret files
 _env_val = os.getenv("DATABASE_URL")
+if not _env_val:
+    _env_val = os.getenv("DATABASE_PUBLIC_URL")
 if _env_val:
     _DATABASE_URL = _env_val
 else:
-    for path in ("/etc/secrets/DATABASE_URL", "/etc/secrets/DATABASE_URL.txt"):
+    for path in ("/etc/secrets/DATABASE_URL", "/etc/secrets/DATABASE_PUBLIC_URL",
+                 "/etc/secrets/DATABASE_URL.txt", "/run/secrets/DATABASE_URL",
+                 "/run/secrets/DATABASE_PUBLIC_URL"):
         try:
             with open(path) as f:
                 _DATABASE_URL = f.read().strip()
@@ -18,7 +22,7 @@ else:
     if not _DATABASE_URL:
         import dotenv
         dotenv.load_dotenv()
-        _DATABASE_URL = os.getenv("DATABASE_URL")
+        _DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("DATABASE_PUBLIC_URL")
 
 USE_PG = _DATABASE_URL is not None
 
