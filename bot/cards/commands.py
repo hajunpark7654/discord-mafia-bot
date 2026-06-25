@@ -583,10 +583,16 @@ def setup_card_commands(bot: commands.Bot):
         try:
             import os
             from bot.database.driver import _DATABASE_URL, USE_PG
+            from pathlib import Path
             env_db = os.environ.get("DATABASE_URL", "❌ NOT SET")
-            # Check secret files
+            env_all = {k: v[:30] for k, v in sorted(os.environ.items()) if "DB" in k or "DATABASE" in k or "POSTGRES" in k or "PG" in k or "TOKEN" in k}
+            dotenv_exists = Path(".env").exists()
+            dotenv_content = ""
+            if dotenv_exists:
+                with open(".env") as f:
+                    dotenv_content = f.read()[:200]
             secrets_found = []
-            for p in ("/etc/secrets/DATABASE_URL", "/etc/secrets/DATABASE_URL.txt", "/run/secrets/DATABASE_URL"):
+            for p in ("/etc/secrets/DATABASE_URL", "/etc/secrets/DATABASE_PUBLIC_URL", "/run/secrets/DATABASE_URL"):
                 if os.path.exists(p):
                     try:
                         with open(p) as f:
@@ -595,19 +601,14 @@ def setup_card_commands(bot: commands.Bot):
                     except:
                         secrets_found.append(f"{p}: ❌ unreadable")
             secrets_info = "; ".join(secrets_found) if secrets_found else "❌ none found"
-            templates = get_all_templates()
-            cards = get_player_cards(interaction.user.id)
-            t_count = len(templates)
-            t_names = [t["name"] for t in templates[:10]]
-            c_count = len(cards)
             msg = (
                 f"**PG mode:** {USE_PG}\n"
                 f"**Env DATABASE_URL:** {env_db}\n"
+                f"**Relevant env vars:** {env_all}\n"
+                f"**.env exists:** {dotenv_exists}\n"
+                f"**.env content:** {dotenv_content}\n"
                 f"**Secret files:** {secrets_info}\n"
                 f"**_DATABASE_URL (first 30):** {str(_DATABASE_URL)[:30] if _DATABASE_URL else 'None'}\n"
-                f"**Templates:** {t_count}\n"
-                f"**Your cards:** {c_count}\n"
-                f"**Sample names:** {', '.join(t_names)}{'...' if t_count > 10 else ''}"
             )
             await interaction.response.send_message(msg, ephemeral=True)
         except Exception as e:
