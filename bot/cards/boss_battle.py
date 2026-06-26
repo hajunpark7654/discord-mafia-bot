@@ -145,6 +145,8 @@ class BossBattle:
 
         self.scale_hp()
 
+        pick_tasks = {}  # pid -> {"chosen": card_id or None, "cards": list, "name": str}
+        pending = 0
         for pid in self.players:
             cards = get_player_cards(pid)
             member = self.bot.get_user(pid)
@@ -157,6 +159,10 @@ class BossBattle:
                 self.player_cards[pid] = card
                 continue
 
+            task = {"chosen": None, "cards": cards, "name": name}
+            pick_tasks[pid] = task
+            pending += 1
+
             embed = discord.Embed(
                 title=f"🎴 {name}: Choose your boss battle card!",
                 description="Pick the card you'll fight with.",
@@ -167,34 +173,36 @@ class BossBattle:
                 value=str(c["id"])
             ) for c in cards[:25]]
 
-            view = discord.ui.View(timeout=60)
+            view = discord.ui.View(timeout=70)
             select = discord.ui.Select(placeholder="Choose your card...", options=options)
-            chosen = [None]
 
             async def select_cb(interaction, pid=pid):
                 if interaction.user.id != pid:
                     await interaction.response.send_message("❌ Not your turn!", ephemeral=True)
                     return
-                chosen[0] = int(select.values[0])
+                pick_tasks[pid]["chosen"] = int(select.values[0])
                 await interaction.response.edit_message(content=f"✅ {name} selected a card!", embed=None, view=None)
 
             select.callback = select_cb
             view.add_item(select)
             await self.channel.send(embed=embed, view=view)
 
+        if pending > 0:
             for _ in range(60):
-                await asyncio.sleep(1)
-                if chosen[0] is not None:
+                if all(t["chosen"] is not None for t in pick_tasks.values()):
                     break
-            if chosen[0] is not None:
-                c = next((c for c in cards if c["id"] == chosen[0]), None)
+                await asyncio.sleep(1)
+
+        for pid, task in pick_tasks.items():
+            if task["chosen"] is not None:
+                c = next((c for c in task["cards"] if c["id"] == task["chosen"]), None)
                 if c:
                     card = dict(c)
                     card["max_health"] = card["health"]
                     self.player_cards[pid] = card
             else:
-                await self.channel.send(f"⏰ {name} timed out! Auto-selecting first card.")
-                card = dict(cards[0])
+                await self.channel.send(f"⏰ {task['name']} timed out! Auto-selecting first card.")
+                card = dict(task["cards"][0])
                 card["max_health"] = card["health"]
                 self.player_cards[pid] = card
 
