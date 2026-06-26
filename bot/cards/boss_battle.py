@@ -24,7 +24,6 @@ class BossBattle:
         self.turn = 0
         self.damage_dealt = {}
         self.state = "joining"
-        self.skip_event = asyncio.Event()
         self.enraged = False
         self.BASE_DMG_MULT = 2
         self.ENRAGED_DMG_MULT = 1.5
@@ -62,7 +61,7 @@ class BossBattle:
             if self.template.get("image_url"):
                 embed.set_image(url=self.template["image_url"])
 
-            view = discord.ui.View()
+            view = discord.ui.View(timeout=300)
 
             join_button = discord.ui.Button(label="Join Battle", style=ButtonStyle.primary, emoji="⚔️")
 
@@ -87,7 +86,7 @@ class BossBattle:
                 if interaction.user.id != self.admin.id:
                     await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
                     return
-                self.skip_event.set()
+                self.skipped = True
                 await interaction.response.send_message("⏩ Timer skipped!", ephemeral=True)
 
             skip_button.callback = skip_cb
@@ -99,7 +98,7 @@ class BossBattle:
                 if interaction.user.id != self.admin.id:
                     await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
                     return
-                self.skip_event.set()
+                self.skipped = True
                 self.cancelled = True
                 await interaction.response.send_message("⛔ Boss battle cancelled!", ephemeral=True)
 
@@ -128,13 +127,11 @@ class BossBattle:
             return
 
         self.cancelled = False
-        try:
-            await asyncio.wait(
-                [asyncio.sleep(300), self.skip_event.wait()],
-                return_when=asyncio.FIRST_COMPLETED
-            )
-        except asyncio.CancelledError:
-            pass
+        self.skipped = False
+        for _ in range(300):
+            if self.skipped:
+                break
+            await asyncio.sleep(1)
 
         if self.cancelled:
             await self.msg.edit(content="⛔ Boss battle cancelled.", embed=None, view=None)

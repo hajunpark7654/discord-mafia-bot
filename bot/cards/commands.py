@@ -662,7 +662,7 @@ def setup_card_commands(bot: commands.Bot):
         if not bb:
             await interaction.response.send_message("❌ No active boss battle in this channel.", ephemeral=True)
             return
-        bb.skip_event.set()
+        bb.skipped = True
         await interaction.response.send_message("⏩ Boss timer skipped!", ephemeral=True)
 
     @bot.tree.command(name="boss_cancel", description="[ADMIN] Cancel the boss battle", guild=guild)
@@ -675,7 +675,7 @@ def setup_card_commands(bot: commands.Bot):
         if not bb:
             await interaction.response.send_message("❌ No active boss battle in this channel.", ephemeral=True)
             return
-        bb.skip_event.set()
+        bb.skipped = True
         bb.cancelled = True
         await interaction.response.send_message("⛔ Boss battle cancelled!", ephemeral=True)
 
