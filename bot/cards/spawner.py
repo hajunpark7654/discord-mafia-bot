@@ -8,7 +8,7 @@ from bot.database.db import get_config, set_config
 from config import GUILD_ID
 
 SPAWN_MIN_INTERVAL = 600
-SPAWN_MAX_INTERVAL = 1200
+SPAWN_MAX_INTERVAL = 900
 CATCH_TIMEOUT = 120
 
 

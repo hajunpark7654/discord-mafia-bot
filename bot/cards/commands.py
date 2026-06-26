@@ -1,3 +1,4 @@
+import asyncio
 import discord
 from typing import Optional
 from discord import app_commands
@@ -304,9 +305,19 @@ def setup_card_commands(bot: commands.Bot):
             return
 
         battle_id = create_battle(interaction.user.id, player.id)
-        await interaction.response.send_message(f"⚔️ Battle started against {player.mention}! Check your DMs.", ephemeral=True)
+        await interaction.response.send_message(f"⚔️ Battle started against {player.mention}!", ephemeral=True)
         guild = interaction.guild
-        await run_battle(bot, battle_id, interaction.user, player, guild)
+        channel = interaction.channel
+
+        async def _run():
+            try:
+                await run_battle(bot, battle_id, interaction.user, player, guild, channel)
+            except Exception as e:
+                print(f"Battle error: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+
+        asyncio.create_task(_run())
 
     @bot.tree.command(name="redeem", description="[ADMIN] Create a card for a player", guild=guild)
     @app_commands.describe(name="Card template name", player="Recipient", attack="ATK stat", speed="SPD stat", health="HP stat", shiny="Is shiny", mythical="Is mythical")
