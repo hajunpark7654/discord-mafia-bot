@@ -63,6 +63,7 @@ class BossBattle:
                 embed.set_image(url=self.template["image_url"])
 
             view = discord.ui.View()
+
             join_button = discord.ui.Button(label="Join Battle", style=ButtonStyle.primary, emoji="⚔️")
 
             async def join_cb(interaction):
@@ -79,7 +80,31 @@ class BossBattle:
 
             join_button.callback = join_cb
             view.add_item(join_button)
-            view.add_item(discord.ui.Button(label="Skip Timer", style=ButtonStyle.secondary, emoji="⏩", custom_id="boss_skip_button"))
+
+            skip_button = discord.ui.Button(label="Skip Timer", style=ButtonStyle.secondary, emoji="⏩")
+
+            async def skip_cb(interaction):
+                if interaction.user.id != self.admin.id:
+                    await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+                    return
+                self.skip_event.set()
+                await interaction.response.send_message("⏩ Timer skipped!", ephemeral=True)
+
+            skip_button.callback = skip_cb
+            view.add_item(skip_button)
+
+            cancel_button = discord.ui.Button(label="Cancel", style=ButtonStyle.danger, emoji="⛔")
+
+            async def cancel_cb(interaction):
+                if interaction.user.id != self.admin.id:
+                    await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+                    return
+                self.skip_event.set()
+                self.cancelled = True
+                await interaction.response.send_message("⛔ Boss battle cancelled!", ephemeral=True)
+
+            cancel_button.callback = cancel_cb
+            view.add_item(cancel_button)
 
             self.msg = await self.channel.send(
                 content="**👹 Boss Battle!** Join to fight!",
@@ -87,22 +112,12 @@ class BossBattle:
                 allowed_mentions=discord.AllowedMentions(everyone=True)
             )
 
-            async def skip_button_cb(interaction):
-                if interaction.user.id != self.admin.id:
-                    await interaction.response.send_message("❌ Only the admin can skip.", ephemeral=True)
-                    return
-                self.skip_event.set()
-                await interaction.response.send_message("⏩ Timer skipped!", ephemeral=True)
-
-            for child in view.children:
-                if isinstance(child, discord.ui.Button) and child.custom_id == "boss_skip_button":
-                    child.callback = skip_button_cb
-                    break
-            await self.msg.edit(view=view)
-
         except discord.Forbidden:
             try:
-                self.msg = await self.channel.send(embed=embed, view=view)
+                self.msg = await self.channel.send(
+                    content="**👹 Boss Battle!** Join to fight!",
+                    embed=embed, view=view,
+                )
             except Exception as e:
                 print(f"Boss battle setup failed (no perms): {e}", flush=True)
                 del active_boss[self.channel.id]
@@ -112,6 +127,7 @@ class BossBattle:
             del active_boss[self.channel.id]
             return
 
+        self.cancelled = False
         try:
             await asyncio.wait(
                 [asyncio.sleep(300), self.skip_event.wait()],
@@ -119,6 +135,11 @@ class BossBattle:
             )
         except asyncio.CancelledError:
             pass
+
+        if self.cancelled:
+            await self.msg.edit(content="⛔ Boss battle cancelled.", embed=None, view=None)
+            del active_boss[self.channel.id]
+            return
 
         if len(self.players) < 1:
             await self.msg.edit(content="❌ Not enough players joined.", embed=None, view=None)
