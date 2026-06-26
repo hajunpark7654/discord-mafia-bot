@@ -3,8 +3,10 @@ import random
 import discord
 from discord import ButtonStyle
 from bot.cards.db import insert_card_instance, get_player_cards
-from bot.cards.models import generate_card, compute_ovr, combat_damage
+from bot.cards.models import generate_card, compute_ovr, combat_damage, RARITY_COLORS
 from bot.database.db import add_points
+
+active_boss = {}
 
 
 class BossBattle:
@@ -22,10 +24,21 @@ class BossBattle:
         self.turn = 0
         self.damage_dealt = {}
         self.state = "joining"
+        self.skip_event = asyncio.Event()
+        self.enraged = False
+        self.BASE_DMG_MULT = 2
+        self.ENRAGED_DMG_MULT = 1.5
+        self.msg = None
+
+    def effective_boss_atk(self):
+        atk = self.boss_atk * self.BASE_DMG_MULT
+        if self.enraged:
+            atk = round(atk * self.ENRAGED_DMG_MULT)
+        return atk
 
     def scale_hp(self):
         count = len(self.players)
-        multiplier = 7 if count < 6 else 10
+        multiplier = 10 if count < 6 else 13
         self.boss_max_hp = self.template["health"] * multiplier
         self.boss_hp = self.boss_max_hp
 
@@ -34,6 +47,7 @@ class BossBattle:
         return m.mention if m else f"<@{pid_or_user_id}>"
 
     async def run(self):
+        active_boss[self.channel.id] = self
         try:
             embed = discord.Embed(
                 title=f"👹 Boss Battle: {self.template['name']}!",
@@ -45,6 +59,9 @@ class BossBattle:
                 ),
                 color=0xFF0000,
             )
+            if self.template.get("image_url"):
+                embed.set_image(url=self.template["image_url"])
+
             view = discord.ui.View()
             join_button = discord.ui.Button(label="Join Battle", style=ButtonStyle.primary, emoji="⚔️")
 
@@ -62,28 +79,50 @@ class BossBattle:
 
             join_button.callback = join_cb
             view.add_item(join_button)
+            view.add_item(discord.ui.Button(label="Skip Timer", style=ButtonStyle.secondary, emoji="⏩", custom_id="boss_skip_button"))
 
-            msg = await self.channel.send(
+            self.msg = await self.channel.send(
                 content="**👹 Boss Battle!** Join to fight!",
                 embed=embed, view=view,
                 allowed_mentions=discord.AllowedMentions(everyone=True)
             )
+
+            async def skip_button_cb(interaction):
+                if interaction.user.id != self.admin.id:
+                    await interaction.response.send_message("❌ Only the admin can skip.", ephemeral=True)
+                    return
+                self.skip_event.set()
+                await interaction.response.send_message("⏩ Timer skipped!", ephemeral=True)
+
+            for child in view.children:
+                if isinstance(child, discord.ui.Button) and child.custom_id == "boss_skip_button":
+                    child.callback = skip_button_cb
+                    break
+            await self.msg.edit(view=view)
+
         except discord.Forbidden:
             try:
-                msg = await self.channel.send(
-                    embed=embed, view=view
-                )
+                self.msg = await self.channel.send(embed=embed, view=view)
             except Exception as e:
                 print(f"Boss battle setup failed (no perms): {e}", flush=True)
+                del active_boss[self.channel.id]
                 return
         except Exception as e:
             print(f"Boss battle setup failed: {e}", flush=True)
+            del active_boss[self.channel.id]
             return
 
-        await asyncio.sleep(300)
+        try:
+            await asyncio.wait(
+                [asyncio.sleep(300), self.skip_event.wait()],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+        except asyncio.CancelledError:
+            pass
 
         if len(self.players) < 1:
-            await msg.edit(content="❌ Not enough players joined.", embed=None, view=None)
+            await self.msg.edit(content="❌ Not enough players joined.", embed=None, view=None)
+            del active_boss[self.channel.id]
             return
 
         self.scale_hp()
@@ -95,12 +134,26 @@ class BossBattle:
                 card["max_health"] = card["health"]
                 self.player_cards[pid] = card
 
-        await msg.edit(
+        player_lines = []
+        for pid in self.players:
+            pc = self.player_cards.get(pid)
+            if pc:
+                player_lines.append(
+                    f"• {self._mention(pid)} — **{pc['card_name']}** [{pc['rarity']}] HP: {pc['health']}/{pc['max_health']}"
+                )
+            else:
+                player_lines.append(f"• {self._mention(pid)} — No card")
+        await self.channel.send(f"👥 **Players:**\n" + "\n".join(player_lines))
+
+        await self.msg.edit(
             content=f"⚔️ **Boss Battle Starting!** {len(self.players)} players. Boss HP: **{self.boss_hp}**",
             embed=None, view=None
         )
 
-        await self.channel.send(f"⚔️ **{len(self.players)}** players vs **{self.template['name']}**! Fight!")
+        await self.channel.send(
+            f"⚔️ **{len(self.players)}** players vs **{self.template['name']}**! "
+            f"Boss HP: **{self.boss_hp}**  Boss ATK: **{self.effective_boss_atk()}** (2x multiplier)"
+        )
 
         for pid in self.players:
             self.damage_dealt[pid] = 0
@@ -116,7 +169,7 @@ class BossBattle:
 
             target = random.choice(alive)
             card = self.player_cards.get(target, {})
-            dmg, crit, dtype, dodged = combat_damage(self.boss_atk, card.get("speed", 0))
+            dmg, crit, dtype, dodged = combat_damage(self.effective_boss_atk(), card.get("speed", 0))
             if dtype == "miss":
                 round_lines.append(f"👹 **{self.template['name']}** attacks {self._mention(target)}'s **{card.get('card_name','?')}** but **misses**!")
             elif dtype == "dodge":
@@ -129,15 +182,19 @@ class BossBattle:
             if card.get("health", 0) <= 0:
                 round_lines.append(f"💀 {self._mention(target)}'s **{card.get('card_name','?')}** has been defeated!")
 
+            if not self.enraged and self.boss_hp <= self.boss_max_hp // 2:
+                self.enraged = True
+                round_lines.append(f"🔥 **{self.template['name']}** is **ENRAGED**! Damage increased by 1.5x (3x total)!")
+
             if self.turn % 3 == 0 and self.boss_hp > 0:
                 heal = min(1000, self.boss_max_hp - self.boss_hp)
                 self.boss_hp += heal
                 for pid in alive:
                     pc = self.player_cards.get(pid, {})
-                    pc["health"] = max(0, pc.get("health", 0) - 600)
-                round_lines.append(f"💀 **Life Steal!** Boss heals **{heal}** HP, deals **600** damage to all remaining players!")
+                    pc["health"] = max(0, pc.get("health", 0) - 800)
+                round_lines.append(f"💀 **Life Steal!** Boss heals **{heal}** HP, deals **800** damage to all remaining players!")
 
-            if self.turn % 5 == 0 and self.boss_hp > 0:
+            if self.turn % 6 == 0 and self.boss_hp > 0:
                 revived = 0
                 for pid in self.players:
                     pc = self.player_cards.get(pid, {})
@@ -181,8 +238,10 @@ class BossBattle:
             )
             await self.channel.send(f"**Damage Summary:**\n{summary}")
 
+            reward_log = []
             for pid in self.players:
                 member = self.bot.get_user(pid)
+                reward_log.append(f"• {self._mention(pid)}: +20 points")
                 if pid == winner:
                     add_points(pid, 20)
                     card = generate_card(self.template, from_mafia=False)
@@ -204,9 +263,32 @@ class BossBattle:
                         ovr=card["ovr"],
                         is_special=card.get("is_special", False),
                     )
+                    shiny_s = " ✨" if card["is_shiny"] else ""
+                    mythical_s = " 🌌" if card["is_mythical"] else ""
+                    reward_log[-1] += f" + **{card['card_name']}** [{card['rarity']}]{shiny_s}{mythical_s}"
+
+                    img = ""
+                    if card["is_mythical"]:
+                        img = self.template.get("mythical_catch_image_url") or ""
+                    if not img and card["is_shiny"]:
+                        img = self.template.get("shiny_catch_image_url") or ""
+                    if not img:
+                        img = self.template.get("catch_image_url") or ""
+
+                    card_color = 0x000000 if card["is_mythical"] else RARITY_COLORS.get(card["rarity"], 0x808080)
+                    card_embed = discord.Embed(
+                        title=f"🏆 MVP Reward: {card['card_name']} [{card['rarity']}]{shiny_s}{mythical_s}",
+                        description=(
+                            f"**HP:** {card['health']}  **ATK:** {card['attack']}  **SPD:** {card['speed']}\n"
+                            f"**OVR:** {card['ovr']}"
+                        ),
+                        color=card_color,
+                    )
+                    if img:
+                        card_embed.set_image(url=img)
+                    await self.channel.send(embed=card_embed)
+
                     if member:
-                        shiny_s = " ✨" if card["is_shiny"] else ""
-                        mythical_s = " 🌌" if card["is_mythical"] else ""
                         try:
                             await member.send(f"🏆 MVP! You defeated the boss and won **{card['card_name']}** [{card['rarity']}]{shiny_s}{mythical_s} +**20** points!")
                         except:
@@ -218,6 +300,8 @@ class BossBattle:
                             await member.send(f"🏆 You helped defeat the boss! +**20** points!")
                         except:
                             pass
+
+            await self.channel.send(f"**Rewards:**\n" + "\n".join(reward_log))
         else:
             await self.channel.send(f"💀 **Defeat!** All players have fallen.")
             summary = "\n".join(
@@ -225,3 +309,5 @@ class BossBattle:
                 for pid, dmg in sorted(self.damage_dealt.items(), key=lambda x: -x[1])
             )
             await self.channel.send(f"**Damage Summary:**\n{summary}")
+
+        del active_boss[self.channel.id]

@@ -652,6 +652,19 @@ def setup_card_commands(bot: commands.Bot):
 
         asyncio.create_task(run_boss_battle())
 
+    @bot.tree.command(name="boss_skip", description="[ADMIN] Skip the boss battle join timer", guild=guild)
+    async def boss_skip(interaction: discord.Interaction):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+        from bot.cards.boss_battle import active_boss
+        bb = active_boss.get(interaction.channel_id)
+        if not bb:
+            await interaction.response.send_message("❌ No active boss battle in this channel.", ephemeral=True)
+            return
+        bb.skip_event.set()
+        await interaction.response.send_message("⏩ Boss timer skipped!", ephemeral=True)
+
     @bot.tree.command(name="auction", description="[ADMIN] Start a card auction", guild=guild)
     @app_commands.describe(card_id="Card ID to auction", min_bid="Minimum starting bid", instant_bid="Bid that instantly wins", duration="Auction duration in minutes")
     @app_commands.autocomplete(card_id=card_autocomplete)
