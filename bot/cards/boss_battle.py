@@ -146,8 +146,54 @@ class BossBattle:
         self.scale_hp()
 
         for pid in self.players:
-            cards = get_player_cards(pid)[:1]
-            if cards:
+            cards = get_player_cards(pid)
+            member = self.bot.get_user(pid)
+            name = member.display_name if member else str(pid)
+            if not cards:
+                continue
+            if len(cards) == 1:
+                card = dict(cards[0])
+                card["max_health"] = card["health"]
+                self.player_cards[pid] = card
+                continue
+
+            embed = discord.Embed(
+                title=f"🎴 {name}: Choose your boss battle card!",
+                description="Pick the card you'll fight with.",
+                color=0x00FF00,
+            )
+            options = [discord.SelectOption(
+                label=f"{c['card_name']} [{c['rarity']}] HP:{c['health']} ATK:{c['attack']} SPD:{c['speed']}"[:100],
+                value=str(c["id"])
+            ) for c in cards[:25]]
+
+            view = discord.ui.View(timeout=60)
+            select = discord.ui.Select(placeholder="Choose your card...", options=options)
+            chosen = [None]
+
+            async def select_cb(interaction, pid=pid):
+                if interaction.user.id != pid:
+                    await interaction.response.send_message("❌ Not your turn!", ephemeral=True)
+                    return
+                chosen[0] = int(select.values[0])
+                await interaction.response.edit_message(content=f"✅ {name} selected a card!", embed=None, view=None)
+
+            select.callback = select_cb
+            view.add_item(select)
+            await self.channel.send(embed=embed, view=view)
+
+            for _ in range(60):
+                await asyncio.sleep(1)
+                if chosen[0] is not None:
+                    break
+            if chosen[0] is not None:
+                c = next((c for c in cards if c["id"] == chosen[0]), None)
+                if c:
+                    card = dict(c)
+                    card["max_health"] = card["health"]
+                    self.player_cards[pid] = card
+            else:
+                await self.channel.send(f"⏰ {name} timed out! Auto-selecting first card.")
                 card = dict(cards[0])
                 card["max_health"] = card["health"]
                 self.player_cards[pid] = card
@@ -246,6 +292,8 @@ class BossBattle:
                     break
 
             await self.channel.send("\n".join(round_lines))
+            if self.boss_hp > 0:
+                await asyncio.sleep(3)
 
         if self.boss_hp <= 0:
             winner = max(self.damage_dealt, key=self.damage_dealt.get)
