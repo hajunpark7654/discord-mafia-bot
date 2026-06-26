@@ -283,7 +283,8 @@ class BossBattle:
                     )
                     shiny_s = " ✨" if card["is_shiny"] else ""
                     mythical_s = " 🌌" if card["is_mythical"] else ""
-                    reward_log[-1] += f" + **{card['card_name']}** [{card['rarity']}]{shiny_s}{mythical_s}"
+                    card_name = self.template["name"]
+                    reward_log[-1] += f" + **{card_name}** [{card['rarity']}]{shiny_s}{mythical_s}"
 
                     img = ""
                     if card["is_mythical"]:
@@ -295,7 +296,7 @@ class BossBattle:
 
                     card_color = 0x000000 if card["is_mythical"] else RARITY_COLORS.get(card["rarity"], 0x808080)
                     card_embed = discord.Embed(
-                        title=f"🏆 MVP Reward: {card['card_name']} [{card['rarity']}]{shiny_s}{mythical_s}",
+                        title=f"🏆 MVP Reward: {card_name} [{card['rarity']}]{shiny_s}{mythical_s}",
                         description=(
                             f"**HP:** {card['health']}  **ATK:** {card['attack']}  **SPD:** {card['speed']}\n"
                             f"**OVR:** {card['ovr']}"
@@ -308,7 +309,7 @@ class BossBattle:
 
                     if member:
                         try:
-                            await member.send(f"🏆 MVP! You defeated the boss and won **{card['card_name']}** [{card['rarity']}]{shiny_s}{mythical_s} +**20** points!")
+                            await member.send(f"🏆 MVP! You defeated the boss and won **{card_name}** [{card['rarity']}]{shiny_s}{mythical_s} +**20** points!")
                         except:
                             pass
                 else:
