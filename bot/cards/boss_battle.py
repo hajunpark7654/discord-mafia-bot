@@ -319,8 +319,8 @@ class BossBattle:
                 if pid == winner:
                     add_points(pid, 20)
                     card = generate_card(self.template, from_mafia=False)
-                    card["is_shiny"] = random.random() < 0.25
-                    card["is_mythical"] = random.random() < 0.05
+                    card["is_shiny"] = random.random() < 0.35
+                    card["is_mythical"] = random.random() < 0.15
                     card["ovr"] = compute_ovr(card["health"], card["attack"], card["speed"])
                     cid = insert_card_instance(
                         owner_id=pid,
@@ -342,6 +342,14 @@ class BossBattle:
                     card_name = self.template["name"]
                     reward_log[-1] += f" + **{card_name}** [{card['rarity']}]{shiny_s}{mythical_s}"
 
+                    lines = [f"{self._mention(pid)}, you earned **{card_name}** [{card['rarity']}]{shiny_s}{mythical_s} as the MVP!"]
+                    if card["is_shiny"]:
+                        lines.append("✨ This card RADIATES a golden-aura.")
+                    if card["is_mythical"]:
+                        lines.append("🌌 The air tenses, as a mythical aura emits from the card.")
+                    lines.append(f"**HP:** {card['health']}  **ATK:** {card['attack']}  **SPD:** {card['speed']}")
+                    lines.append(f"**OVR:** {card['ovr']}")
+
                     img = ""
                     if card["is_mythical"]:
                         img = self.template.get("mythical_catch_image_url") or ""
@@ -350,13 +358,10 @@ class BossBattle:
                     if not img:
                         img = self.template.get("catch_image_url") or ""
 
-                    card_color = 0x000000 if card["is_mythical"] else RARITY_COLORS.get(card["rarity"], 0x808080)
+                    card_color = 0xFFD700 if card["is_shiny"] else (0x000000 if card["is_mythical"] else RARITY_COLORS.get(card["rarity"], 0x808080))
                     card_embed = discord.Embed(
                         title=f"🏆 MVP Reward: {card_name} [{card['rarity']}]{shiny_s}{mythical_s}",
-                        description=(
-                            f"**HP:** {card['health']}  **ATK:** {card['attack']}  **SPD:** {card['speed']}\n"
-                            f"**OVR:** {card['ovr']}"
-                        ),
+                        description="\n".join(lines),
                         color=card_color,
                     )
                     if img:
