@@ -7,9 +7,15 @@ from bot.cards.db import get_random_template, insert_card_instance, get_all_temp
 from bot.database.db import get_config, set_config
 from config import GUILD_ID
 
-SPAWN_MIN_INTERVAL = 600
-SPAWN_MAX_INTERVAL = 900
 CATCH_TIMEOUT = 120
+
+
+def get_spawn_interval():
+    min_s = int(get_config("spawn_min_interval") or 600)
+    max_s = int(get_config("spawn_max_interval") or 900)
+    if max_s < min_s:
+        max_s = min_s
+    return min_s, max_s
 
 
 class CardSpawner:
@@ -40,7 +46,8 @@ class CardSpawner:
             if get_config("card_spawn_enabled") != "1":
                 await asyncio.sleep(60)
                 continue
-            interval = random.randint(SPAWN_MIN_INTERVAL, SPAWN_MAX_INTERVAL)
+            min_s, max_s = get_spawn_interval()
+            interval = random.randint(min_s, max_s)
             await asyncio.sleep(interval)
             if get_config("card_spawn_enabled") != "1":
                 continue

@@ -653,6 +653,20 @@ def setup_card_commands(bot: commands.Bot):
             await spawner.start()
         await interaction.response.send_message("✅ Card spawns started.", ephemeral=True)
 
+    @bot.tree.command(name="spawn_rate", description="[ADMIN] Set spawn interval range in minutes", guild=guild)
+    @app_commands.describe(min_minutes="Minimum minutes between spawns", max_minutes="Maximum minutes between spawns")
+    async def spawn_rate(interaction: discord.Interaction, min_minutes: int, max_minutes: int):
+        if not is_admin(interaction):
+            await interaction.response.send_message("❌ Only the admin.", ephemeral=True)
+            return
+        if min_minutes < 1 or max_minutes < 1 or max_minutes < min_minutes:
+            await interaction.response.send_message("❌ Invalid range. Both values >= 1 and max >= min.", ephemeral=True)
+            return
+        from bot.database.db import set_config
+        set_config("spawn_min_interval", str(min_minutes * 60))
+        set_config("spawn_max_interval", str(max_minutes * 60))
+        await interaction.response.send_message(f"✅ Spawn interval set to {min_minutes}-{max_minutes} minutes.", ephemeral=True)
+
     @bot.tree.command(name="card_diag", description="[ADMIN] Debug card database status", guild=guild)
     async def card_diag(interaction: discord.Interaction):
         if not is_admin(interaction):
