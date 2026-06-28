@@ -55,7 +55,7 @@ def apply_modifiers(health, attack, speed, h_mod, a_mod, s_mod):
 
 
 CATCH_SHINY_CHANCE = 0.05
-CATCH_MYTHICAL_CHANCE = 0.0005
+CATCH_MYTHICAL_CHANCE = 0.001
 MAFIA_SHINY_CHANCE = 0.05
 MAFIA_MYTHICAL_CHANCE = 0.01
 
