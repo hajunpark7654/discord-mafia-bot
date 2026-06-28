@@ -29,13 +29,13 @@ def compute_rarity(ovr):
 
 
 def combat_damage(attack, target_spd=0):
-    if random.random() < 0.10:
+    if random.random() < 0.05:
         return 0, False, "miss", False
-    if random.random() < target_spd / 5000:
+    if random.random() < target_spd / 10000:
         return 0, False, "dodge", True
     reduction = random.randint(0, 10) / 100
     dmg = max(1, round(attack * (1 - reduction)))
-    crit = random.random() < 0.05
+    crit = random.random() < 0.10
     if crit:
         dmg = round(dmg * 1.5)
         return dmg, True, "crit", False
