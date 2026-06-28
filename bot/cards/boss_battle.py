@@ -145,14 +145,9 @@ class BossBattle:
 
         self.scale_hp()
 
-        await self.channel.send("📬 **Check your DMs to pick your boss battle card!** (60s to choose)")
-
-        pick_tasks = {}
-        pending = 0
+        pending_pids = []
         for pid in self.players:
             cards = get_player_cards(pid)
-            member = self.bot.get_user(pid)
-            name = member.display_name if member else str(pid)
             if not cards:
                 continue
             if len(cards) == 1:
@@ -160,60 +155,69 @@ class BossBattle:
                 card["max_health"] = card["health"]
                 self.player_cards[pid] = card
                 continue
+            pending_pids.append(pid)
 
-            task = {"chosen": None, "cards": cards, "name": name}
-            pick_tasks[pid] = task
-            pending += 1
+        if pending_pids:
+            msg = await self.channel.send("🎴 **Click the button below to select your boss battle card!**")
 
-            embed = discord.Embed(
-                title=f"🎴 Choose your boss battle card!",
-                description=f"Pick the card you'll fight **{self.template['name']}** with.\nYou have 60 seconds.",
-                color=0x00FF00,
-            )
-            options = [discord.SelectOption(
-                label=f"{c['card_name']} [{c['rarity']}] HP:{c['health']} ATK:{c['attack']} SPD:{c['speed']}"[:100],
-                value=str(c["id"])
-            ) for c in cards[:25]]
-
-            view = discord.ui.View(timeout=70)
-            select = discord.ui.Select(placeholder="Choose your card...", options=options)
-
-            async def select_cb(interaction, pid=pid, cards=cards):
-                if interaction.user.id != pid:
-                    await interaction.response.send_message("❌ Not your card selection!", ephemeral=True)
+            async def card_pick_modal_cb(interaction: discord.Interaction):
+                pid = interaction.user.id
+                if pid not in pending_pids:
+                    await interaction.response.send_message("❌ You're not in this boss battle!", ephemeral=True)
                     return
-                chosen_id = int(interaction.data["values"][0])
-                pick_tasks[pid]["chosen"] = chosen_id
-                card_name = next(c["card_name"] for c in cards if c["id"] == chosen_id)
-                await interaction.response.edit_message(content=f"✅ Selected **{card_name}**!", embed=None, view=None)
+                cards = get_player_cards(pid)
+                if not cards:
+                    await interaction.response.send_message("❌ You have no cards!", ephemeral=True)
+                    return
 
-            select.callback = select_cb
-            view.add_item(select)
+                options = [discord.SelectOption(
+                    label=f"{c['card_name']} [{c['rarity']}] HP:{c['health']} ATK:{c['attack']} SPD:{c['speed']}"[:100],
+                    value=str(c["id"])
+                ) for c in cards[:25]]
 
-            try:
-                await member.send(embed=embed, view=view)
-            except:
-                await self.channel.send(f"{self._mention(pid)} — choose your card:", embed=embed, view=view)
+                select = discord.ui.Select(placeholder="Choose your card...", options=options)
+                select_view = discord.ui.View(timeout=120)
 
-        if pending > 0:
-            await self.channel.send(f"⏳ Waiting for {pending} player(s) to pick a card...")
+                async def inner_select_cb(inner_interaction):
+                    if inner_interaction.user.id != pid:
+                        await inner_interaction.response.send_message("❌ Not your selection!", ephemeral=True)
+                        return
+                    chosen_id = int(inner_interaction.data["values"][0])
+                    card = next((c for c in cards if c["id"] == chosen_id), None)
+                    if not card:
+                        await inner_interaction.response.send_message("❌ Card not found!", ephemeral=True)
+                        return
+                    card = dict(card)
+                    card["max_health"] = card["health"]
+                    self.player_cards[pid] = card
+                    pending_pids.remove(pid)
+                    await inner_interaction.response.edit_message(content=f"✅ Selected **{card['card_name']}**!", embed=None, view=None)
+
+                select.callback = inner_select_cb
+                select_view.add_item(select)
+                await interaction.response.send_message("🎴 Pick your card:", embed=None, view=select_view, ephemeral=True)
+
+            btn_view = discord.ui.View(timeout=120)
+            pick_btn = discord.ui.Button(label="Select Card", style=discord.ButtonStyle.primary, emoji="🎴")
+            pick_btn.callback = card_pick_modal_cb
+            btn_view.add_item(pick_btn)
+            await msg.edit(view=btn_view)
+
             for _ in range(60):
-                if all(t["chosen"] is not None for t in pick_tasks.values()):
+                if not pending_pids:
                     break
                 await asyncio.sleep(1)
 
-        for pid, task in pick_tasks.items():
-            if task["chosen"] is not None:
-                c = next((c for c in task["cards"] if c["id"] == task["chosen"]), None)
-                if c:
-                    card = dict(c)
+        for pid in self.players:
+            if pid not in self.player_cards:
+                cards = get_player_cards(pid)
+                if cards:
+                    member = self.bot.get_user(pid)
+                    name = member.display_name if member else str(pid)
+                    await self.channel.send(f"⏰ {name} timed out! Auto-selecting first card.")
+                    card = dict(cards[0])
                     card["max_health"] = card["health"]
                     self.player_cards[pid] = card
-            else:
-                await self.channel.send(f"⏰ {task['name']} timed out! Auto-selecting first card.")
-                card = dict(task["cards"][0])
-                card["max_health"] = card["health"]
-                self.player_cards[pid] = card
 
         player_lines = []
         for pid in self.players:
