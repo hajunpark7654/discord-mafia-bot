@@ -2,9 +2,16 @@ import asyncio
 import random
 import discord
 from bot.cards.db import get_player_cards, get_card_instance, finish_battle
-from bot.cards.models import combat_damage
+from bot.cards.models import combat_damage, RARITY_COLORS
 
 BATTLE_TIMEOUT = 60
+
+
+def hp_bar(current, maximum, length=10):
+    ratio = max(0, current / maximum) if maximum > 0 else 0
+    filled = round(ratio * length)
+    bar = "🟩" * filled + "⬛" * (length - filled)
+    return f"{bar} {max(0,current)}/{maximum}"
 
 
 class CardBattle:
@@ -64,35 +71,38 @@ async def run_battle(bot, battle_id, player1, player2, guild, channel):
 
     battle = CardBattle(battle_id, player1, player2, p1_cards, p2_cards)
 
-    status = await channel.send(f"⚔️ **Battle: {player1.mention} vs {player2.mention}**\nSelecting cards...")
+    arena_embed = discord.Embed(
+        title=f"⚔️ Battle Arena",
+        description=f"{player1.mention} **vs** {player2.mention}",
+        color=0xFF4500,
+    )
+    arena_msg = await channel.send(embed=arena_embed)
 
-    async def pick_cards_public(player, cards, label):
-        embed = discord.Embed(
-            title=f"🎴 {player.display_name}: Choose your 3 cards!",
-            color=0x00FF00
-        )
-        options = []
-        for c in cards[:25]:
-            label_text = f"{c['card_name']} [{c['rarity']}] HP:{c['health']} ATK:{c['attack']} SPD:{c['speed']}"
-            options.append(discord.SelectOption(label=label_text[:100], value=str(c["id"])))
+    # ephemeral card selection
+    async def pick_cards_ephemeral(player, cards):
+        options = [discord.SelectOption(
+            label=f"{c['card_name']} [{c['rarity']}] HP:{c['health']} ATK:{c['attack']} SPD:{c['speed']}"[:100],
+            value=str(c["id"])
+        ) for c in cards[:25]]
+
         view = discord.ui.View(timeout=120)
         select = discord.ui.Select(placeholder="Select 3 cards...", options=options, max_values=3)
         chosen = []
 
         async def select_cb(interaction):
             if interaction.user.id != player.id:
-                await interaction.response.send_message("❌ Not your turn!", ephemeral=True)
+                await interaction.response.send_message("❌ Not your selection!", ephemeral=True)
                 return
             nonlocal chosen
-            chosen = [int(v) for v in select.values]
+            chosen = [int(v) for v in interaction.data["values"]]
             await interaction.response.edit_message(
-                content=f"✅ {player.display_name} selected {len(chosen)} cards!",
+                content=f"✅ Selected {len(chosen)} cards!",
                 embed=None, view=None
             )
 
         select.callback = select_cb
         view.add_item(select)
-        msg = await channel.send(embed=embed, view=view)
+        await channel.send(f"🎴 {player.mention}, choose your cards:", view=view)
 
         for _ in range(120):
             await asyncio.sleep(1)
@@ -101,30 +111,41 @@ async def run_battle(bot, battle_id, player1, player2, guild, channel):
         await channel.send(f"⏰ {player.display_name} timed out! Auto-selecting first 3 cards.")
         return [c["id"] for c in cards[:3]]
 
-    p1_selected = await pick_cards_public(player1, p1_cards, "Your cards")
-    p2_selected = await pick_cards_public(player2, p2_cards, "Opponent's cards")
+    p1_selected = await pick_cards_ephemeral(player1, p1_cards)
+    p2_selected = await pick_cards_ephemeral(player2, p2_cards)
 
     p1_chosen = [c for c in p1_cards if c["id"] in p1_selected][:3]
     p2_chosen = [c for c in p2_cards if c["id"] in p2_selected][:3]
 
+    for c in p1_chosen:
+        c["_max_health"] = c["health"]
+    for c in p2_chosen:
+        c["_max_health"] = c["health"]
     battle.players[player1.id]["cards"] = p1_chosen
     battle.players[player2.id]["cards"] = p2_chosen
     battle._build_turn_order()
 
-    p1_list = ", ".join(f"**{c['card_name']}** [{c['rarity']}]" for c in p1_chosen)
-    p2_list = ", ".join(f"**{c['card_name']}** [{c['rarity']}]" for c in p2_chosen)
-    await channel.send(
-        f"🎴 **{player1.display_name}:** {p1_list}\n"
-        f"🎴 **{player2.display_name}:** {p2_list}\n"
-        f"⚔️ **Battle begins!**"
+    # Lineup display
+    p1_lines = "\n".join(f"• {c['card_name']} [{c['rarity']}] {hp_bar(c['health'],c['health'])}" for c in p1_chosen)
+    p2_lines = "\n".join(f"• {c['card_name']} [{c['rarity']}] {hp_bar(c['health'],c['health'])}" for c in p2_chosen)
+
+    lineup_embed = discord.Embed(
+        title=f"🎴 Lineup",
+        description=f"**{player1.display_name}**\n{p1_lines}\n\n**{player2.display_name}**\n{p2_lines}",
+        color=0xFF4500,
     )
+    await channel.send(embed=lineup_embed)
 
     turn_num = 0
     while not battle.is_finished():
         turn_num += 1
         alive_this_pass = [c for c in battle.turn_order if c["health"] > 0]
 
-        round_log = [f"**── Round {turn_num} ──**"]
+        round_embed = discord.Embed(
+            title=f"⚔️ Round {turn_num}",
+            color=0xFF4500,
+        )
+        actions = []
         defeated = []
 
         for card in alive_this_pass:
@@ -136,43 +157,56 @@ async def run_battle(bot, battle_id, player1, player2, guild, channel):
             if not targets:
                 break
 
-            target = await _pick_target_public(owner, card, targets, channel)
+            target = await _pick_target_ephemeral(owner, card, targets, channel)
             if target is None:
                 target = random.choice(targets)
 
             dmg, crit, dtype, dodged = combat_damage(card["attack"], target.get("speed", 0))
             if dtype == "miss":
-                round_log.append(f"⚔️ **{card['card_name']}** ({owner.display_name}) attacks **{target['card_name']}** but **misses**!")
+                actions.append(f"⚔️ **{card['card_name']}** → ☁️ Misses **{target['card_name']}**")
             elif dtype == "dodge":
-                round_log.append(f"⚔️ **{card['card_name']}** ({owner.display_name}) attacks **{target['card_name']}** but it **dodges**!")
+                actions.append(f"⚔️ **{card['card_name']}** → 💨 **{target['card_name']}** dodges!")
             else:
                 target["health"] -= dmg
-                crit_text = " **CRIT!**" if crit else ""
-                round_log.append(f"⚔️ **{card['card_name']}** ({owner.display_name}) attacks **{target['card_name']}** for **{dmg}** damage!{crit_text}")
+                crit_text = " 💥**CRIT!**" if crit else ""
+                actions.append(f"⚔️ **{card['card_name']}** → **{target['card_name']}** **{dmg}** dmg{crit_text}")
 
             if target["health"] <= 0:
                 defeated.append(target["card_name"])
-                round_log.append(f"💀 **{target['card_name']}** has been defeated!")
+                actions.append(f"💀 **{target['card_name']}** defeated!")
 
-        await channel.send("\n".join(round_log))
-        await asyncio.sleep(1)
+        # Show HP statuses
+        status_lines = []
+        for pid, pdata in battle.players.items():
+            member = pdata["member"]
+            lines = []
+            for c in pdata["cards"]:
+                max_hp = c.get("_max_health", c["health"])
+                if c["health"] <= 0:
+                    lines.append(f"~~{c['card_name']}~~ 💀")
+                else:
+                    lines.append(f"{c['card_name']} {hp_bar(c['health'], max_hp)}")
+            status_lines.append(f"**{member.display_name}**\n" + "\n".join(lines))
+
+        round_embed.description = "\n".join(actions) if actions else "No actions this round."
+        round_embed.add_field(name="📊 Status", value="\n\n".join(status_lines), inline=False)
+        await channel.send(embed=round_embed)
+        await asyncio.sleep(2)
 
     winner_id = battle.get_winner()
     if winner_id:
         finish_battle(battle_id, winner_id)
         winner_member = battle.players[winner_id]["member"]
-        await channel.send(f"🏆 **{winner_member.display_name}** wins the battle!")
-        loser_id = [uid for uid in battle.players if uid != winner_id][0]
-        loser_member = battle.players[loser_id]["member"]
-        try:
-            await loser_member.send(f"😔 You lost the battle against {winner_member.display_name}.")
-        except:
-            pass
+        win_embed = discord.Embed(
+            title=f"🏆 {winner_member.display_name} wins!",
+            color=0xFFD700,
+        )
+        await channel.send(embed=win_embed)
 
 
-async def _pick_target_public(player, card, targets, channel):
+async def _pick_target_ephemeral(player, card, targets, channel):
     embed = discord.Embed(
-        title=f"⚔️ {player.display_name}: Choose your target!",
+        title=f"🎯 Choose target",
         description=f"**{card['card_name']}** (HP:{card['health']} ATK:{card['attack']}) is attacking!",
         color=0xFF0000,
     )
@@ -186,15 +220,17 @@ async def _pick_target_public(player, card, targets, channel):
         if interaction.user.id != player.id:
             await interaction.response.send_message("❌ Not your turn!", ephemeral=True)
             return
-        chosen_target[0] = int(select.values[0])
+        chosen_id = int(interaction.data["values"][0])
+        chosen_target[0] = chosen_id
+        t_name = next((t["card_name"] for t in targets if t["id"] == chosen_id), str(chosen_id))
         await interaction.response.edit_message(
-            content=f"🎯 {player.display_name} targets {select.values[0]}!",
+            content=f"🎯 Targeting **{t_name}**!",
             embed=None, view=None
         )
 
     select.callback = select_cb
     view.add_item(select)
-    msg = await channel.send(embed=embed, view=view)
+    msg = await channel.send(f"{player.mention}, choose your target:", embed=embed, view=view)
 
     for _ in range(BATTLE_TIMEOUT):
         await asyncio.sleep(1)
