@@ -182,7 +182,7 @@ class BossBattle:
                 if interaction.user.id != pid:
                     await interaction.response.send_message("❌ Not your card selection!", ephemeral=True)
                     return
-                chosen_id = int(select.values[0])
+                chosen_id = int(interaction.data["values"][0])
                 pick_tasks[pid]["chosen"] = chosen_id
                 card_name = next(c["card_name"] for c in cards if c["id"] == chosen_id)
                 await interaction.response.edit_message(content=f"✅ Selected **{card_name}**!", embed=None, view=None)
