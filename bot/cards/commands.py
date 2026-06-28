@@ -362,6 +362,10 @@ def setup_card_commands(bot: commands.Bot):
         if player.id == interaction.user.id:
             await interaction.response.send_message("❌ You can't battle yourself!", ephemeral=True)
             return
+        from bot.cards.battle import _battle_locks
+        if interaction.user.id in _battle_locks or player.id in _battle_locks:
+            await interaction.response.send_message("❌ One of you is already in a battle!", ephemeral=True)
+            return
         p1_cards = get_player_cards(interaction.user.id)
         p2_cards = get_player_cards(player.id)
         if len(p1_cards) < 3:

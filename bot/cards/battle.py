@@ -5,6 +5,7 @@ from bot.cards.db import get_player_cards, get_card_instance, finish_battle
 from bot.cards.models import combat_damage, RARITY_COLORS
 
 BATTLE_TIMEOUT = 60
+_battle_locks = set()
 
 
 def hp_bar(current, maximum, length=10):
@@ -61,6 +62,16 @@ class CardBattle:
 
 
 async def run_battle(bot, battle_id, player1, player2, guild, channel):
+    _battle_locks.add(player1.id)
+    _battle_locks.add(player2.id)
+    try:
+        await _run_battle(bot, battle_id, player1, player2, guild, channel)
+    finally:
+        _battle_locks.discard(player1.id)
+        _battle_locks.discard(player2.id)
+
+
+async def _run_battle(bot, battle_id, player1, player2, guild, channel):
     p1_cards = get_player_cards(player1.id)[:25]
     p2_cards = get_player_cards(player2.id)[:25]
     if len(p1_cards) < 3 or len(p2_cards) < 3:
