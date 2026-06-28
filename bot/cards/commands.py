@@ -9,6 +9,7 @@ from bot.cards.db import (
     get_player_cards, get_card_instance, transfer_card,
     get_all_templates, get_completion, get_owned_template_ids,
     add_card_template, delete_card_template, create_battle, insert_card_instance,
+    get_card_counts_by_rarity,
 )
 from bot.cards.models import generate_card, RARITY_COLORS, compute_ovr, compute_rarity, apply_modifiers
 from bot.cards.battle import run_battle
@@ -287,6 +288,24 @@ def setup_card_commands(bot: commands.Bot):
             description=names,
             color=0xFF0000,
         )
+        await interaction.response.send_message(embed=embed)
+
+    @bot.tree.command(name="card_rarities", description="Show card counts by rarity", guild=guild)
+    async def card_rarities(interaction: discord.Interaction):
+        counts = get_card_counts_by_rarity()
+        total = sum(counts.values())
+        lines = []
+        for r in ["S", "A", "B", "C", "D", "F"]:
+            c = counts.get(r, 0)
+            color = RARITY_COLORS.get(r, 0x808080)
+            line = f"{'⬜' if r == 'S' else '🟦' if r == 'A' else '🟪' if r == 'B' else '🟣' if r == 'C' else '🟥' if r == 'D' else '🟧'} **{r}:** {c}"
+            lines.append(line)
+        embed = discord.Embed(
+            title=f"📊 Card Rarity Distribution",
+            description="\n".join(lines),
+            color=0x808080,
+        )
+        embed.set_footer(text=f"Total: {total}")
         await interaction.response.send_message(embed=embed)
 
     @bot.tree.command(name="battle", description="Battle another player's cards!", guild=guild)

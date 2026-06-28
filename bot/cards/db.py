@@ -404,6 +404,16 @@ def get_battle(battle_id):
     return dict(row)
 
 
+def get_card_counts_by_rarity():
+    conn = Connection()
+    cur = conn.execute(q("SELECT rarity, COUNT(*) as count FROM card_instances GROUP BY rarity ORDER BY CASE rarity WHEN 'S' THEN 0 WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 WHEN 'D' THEN 4 WHEN 'F' THEN 5 ELSE 6 END"))
+    rows = cur.fetchall()
+    conn.close()
+    if USE_PG:
+        return {r["rarity"]: r["count"] for r in rows}
+    return {r[0]: r[1] for r in rows}
+
+
 def finish_battle(battle_id, winner_id):
     conn = Connection()
     if USE_PG:
