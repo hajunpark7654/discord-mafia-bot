@@ -407,10 +407,11 @@ def get_battle(battle_id):
 def get_card_counts_by_rarity():
     conn = Connection()
     cur = conn.execute(q("SELECT rarity, COUNT(*) as count FROM card_instances GROUP BY rarity ORDER BY CASE rarity WHEN 'S' THEN 0 WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 WHEN 'D' THEN 4 WHEN 'F' THEN 5 ELSE 6 END"))
+    col_keys = [d[0] for d in cur.description] if USE_PG else None
     rows = cur.fetchall()
     conn.close()
     if USE_PG:
-        return {r["rarity"]: r["count"] for r in rows}
+        return {dict(zip(col_keys, r))["rarity"]: dict(zip(col_keys, r))["count"] for r in rows}
     return {r[0]: r[1] for r in rows}
 
 
