@@ -319,8 +319,8 @@ class BossBattle:
                 if pid == winner:
                     add_points(pid, 20)
                     card = generate_card(self.template, from_mafia=False)
-                    card["is_shiny"] = random.random() < 0.35
                     card["is_mythical"] = random.random() < 0.15
+                    card["is_shiny"] = not card["is_mythical"] and random.random() < 0.35
                     card["ovr"] = compute_ovr(card["health"], card["attack"], card["speed"])
                     cid = insert_card_instance(
                         owner_id=pid,

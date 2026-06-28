@@ -75,6 +75,8 @@ def generate_card(template, from_mafia=False):
         h_mod = a_mod = s_mod = 0.0
         is_shiny = random.random() < MAFIA_SHINY_CHANCE
         is_mythical = random.random() < MAFIA_MYTHICAL_CHANCE
+        if is_shiny and is_mythical:
+            is_mythical = False
         # Guarantee B tier or higher by bumping stats if needed
         min_ovr = 5500
         if compute_ovr(health, attack, speed) < min_ovr:
@@ -89,6 +91,8 @@ def generate_card(template, from_mafia=False):
         s_mod = roll_modifier()
         is_shiny = random.random() < CATCH_SHINY_CHANCE
         is_mythical = random.random() < CATCH_MYTHICAL_CHANCE
+        if is_shiny and is_mythical:
+            is_mythical = False
 
     f_health, f_attack, f_speed = apply_modifiers(health, attack, speed, h_mod, a_mod, s_mod)
     ovr = compute_ovr(f_health, f_attack, f_speed)
