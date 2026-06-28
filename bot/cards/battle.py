@@ -16,7 +16,6 @@ def hp_bar(current, maximum, length=10):
 
 class CardBattle:
     def __init__(self, battle_id, player1, player2, p1_cards, p2_cards):
-        self.battle_id = battle_id
         self.players = {player1.id: {"member": player1, "cards": p1_cards},
                         player2.id: {"member": player2, "cards": p2_cards}}
         self.turn_order = []
@@ -45,16 +44,15 @@ class CardBattle:
         return [c for c in self.players[owner_id]["cards"] if c["health"] > 0]
 
     def is_finished(self):
-        return len(self.alive_cards(self.players[list(self.players.keys())[0]]["member"].id)) == 0 or \
-               len(self.alive_cards(self.players[list(self.players.keys())[1]]["member"].id)) == 0
+        pids = list(self.players.keys())
+        return len(self.alive_cards(pids[0])) == 0 or len(self.alive_cards(pids[1])) == 0
 
     def get_winner(self):
-        p1_id = list(self.players.keys())[0]
-        p2_id = list(self.players.keys())[1]
-        if len(self.alive_cards(p1_id)) == 0:
-            return p2_id
-        if len(self.alive_cards(p2_id)) == 0:
-            return p1_id
+        pids = list(self.players.keys())
+        if len(self.alive_cards(pids[0])) == 0:
+            return pids[1]
+        if len(self.alive_cards(pids[1])) == 0:
+            return pids[0]
         return None
 
     def get_valid_targets(self, attacker_owner_id):
@@ -71,51 +69,74 @@ async def run_battle(bot, battle_id, player1, player2, guild, channel):
 
     battle = CardBattle(battle_id, player1, player2, p1_cards, p2_cards)
 
-    arena_embed = discord.Embed(
-        title=f"⚔️ Battle Arena",
-        description=f"{player1.mention} **vs** {player2.mention}",
+    await channel.send(embed=discord.Embed(
+        title=f"⚔️ Battle: {player1.display_name} vs {player2.display_name}",
         color=0xFF4500,
-    )
-    arena_msg = await channel.send(embed=arena_embed)
+    ))
 
-    # ephemeral card selection
-    async def pick_cards_ephemeral(player, cards):
+    # Simultaneous ephemeral card selection
+    pending_pids = [player1.id, player2.id]
+    pick_results = {}
+
+    async def card_select_btn_cb(interaction):
+        pid = interaction.user.id
+        if pid not in pending_pids:
+            await interaction.response.send_message("❌ You're not in this battle!", ephemeral=True)
+            return
+        if pid in pick_results:
+            await interaction.response.send_message("✅ Already picked your cards!", ephemeral=True)
+            return
+
+        cards = get_player_cards(pid)
+        if len(cards) < 3:
+            await interaction.response.send_message("❌ You need 3 cards!", ephemeral=True)
+            return
+
         options = [discord.SelectOption(
             label=f"{c['card_name']} [{c['rarity']}] HP:{c['health']} ATK:{c['attack']} SPD:{c['speed']}"[:100],
             value=str(c["id"])
         ) for c in cards[:25]]
 
-        view = discord.ui.View(timeout=120)
-        select = discord.ui.Select(placeholder="Select 3 cards...", options=options, max_values=3)
-        chosen = []
+        select_view = discord.ui.View(timeout=120)
+        select = discord.ui.Select(placeholder="Pick 3 cards...", options=options, max_values=3)
 
-        async def select_cb(interaction):
-            if interaction.user.id != player.id:
-                await interaction.response.send_message("❌ Not your selection!", ephemeral=True)
+        async def inner_select(inner_interaction):
+            if inner_interaction.user.id != pid:
+                await inner_interaction.response.send_message("❌ Not yours!", ephemeral=True)
                 return
-            nonlocal chosen
-            chosen = [int(v) for v in interaction.data["values"]]
-            await interaction.response.edit_message(
-                content=f"✅ Selected {len(chosen)} cards!",
-                embed=None, view=None
-            )
+            chosen = [int(v) for v in inner_interaction.data["values"]]
+            pick_results[pid] = chosen
+            pending_pids.remove(pid)
+            await inner_interaction.response.edit_message(content=f"✅ Selected {len(chosen)} cards!", embed=None, view=None)
 
-        select.callback = select_cb
-        view.add_item(select)
-        await channel.send(f"🎴 {player.mention}, choose your cards:", view=view)
+        select.callback = inner_select
+        select_view.add_item(select)
+        await interaction.response.send_message("🎴 Pick your 3 cards:", view=select_view, ephemeral=True)
 
-        for _ in range(120):
-            await asyncio.sleep(1)
-            if len(chosen) == 3:
-                return chosen
-        await channel.send(f"⏰ {player.display_name} timed out! Auto-selecting first 3 cards.")
-        return [c["id"] for c in cards[:3]]
+    pick_view = discord.ui.View(timeout=120)
+    pick_btn = discord.ui.Button(label="Select Cards", style=discord.ButtonStyle.primary, emoji="🎴")
+    pick_btn.callback = card_select_btn_cb
+    pick_view.add_item(pick_btn)
+    pick_msg = await channel.send(
+        f"🎴 {player1.mention} **vs** {player2.mention} — click to pick your cards!",
+        view=pick_view
+    )
 
-    p1_selected = await pick_cards_ephemeral(player1, p1_cards)
-    p2_selected = await pick_cards_ephemeral(player2, p2_cards)
+    for _ in range(120):
+        if not pending_pids:
+            break
+        await asyncio.sleep(1)
 
-    p1_chosen = [c for c in p1_cards if c["id"] in p1_selected][:3]
-    p2_chosen = [c for c in p2_cards if c["id"] in p2_selected][:3]
+    # Resolve picks
+    for pid in [player1.id, player2.id]:
+        if pid not in pick_results:
+            cards = get_player_cards(pid)
+            member = battle.players[pid]["member"]
+            await channel.send(f"⏰ {member.display_name} timed out! Auto-selecting first 3 cards.")
+            pick_results[pid] = [c["id"] for c in cards[:3]]
+
+    p1_chosen = [c for c in p1_cards if c["id"] in pick_results[player1.id]][:3]
+    p2_chosen = [c for c in p2_cards if c["id"] in pick_results[player2.id]][:3]
 
     for c in p1_chosen:
         c["_max_health"] = c["health"]
@@ -125,13 +146,22 @@ async def run_battle(bot, battle_id, player1, player2, guild, channel):
     battle.players[player2.id]["cards"] = p2_chosen
     battle._build_turn_order()
 
-    # Lineup display
-    p1_lines = "\n".join(f"• {c['card_name']} [{c['rarity']}] {hp_bar(c['health'],c['health'])}" for c in p1_chosen)
-    p2_lines = "\n".join(f"• {c['card_name']} [{c['rarity']}] {hp_bar(c['health'],c['health'])}" for c in p2_chosen)
+    # Clean up pick button
+    for item in pick_view.children:
+        item.disabled = True
+    await pick_msg.edit(content=f"🎴 Cards selected! Battle starting...", view=pick_view)
+
+    # Lineup embed
+    def format_lineup(pid):
+        pdata = battle.players[pid]
+        lines = []
+        for c in pdata["cards"]:
+            lines.append(f"• {c['card_name']} [{c['rarity']}] {hp_bar(c['health'], c['health'])}")
+        return "\n".join(lines)
 
     lineup_embed = discord.Embed(
         title=f"🎴 Lineup",
-        description=f"**{player1.display_name}**\n{p1_lines}\n\n**{player2.display_name}**\n{p2_lines}",
+        description=f"**{player1.display_name}**\n{format_lineup(player1.id)}\n\n**{player2.display_name}**\n{format_lineup(player2.id)}",
         color=0xFF4500,
     )
     await channel.send(embed=lineup_embed)
@@ -146,7 +176,6 @@ async def run_battle(bot, battle_id, player1, player2, guild, channel):
             color=0xFF4500,
         )
         actions = []
-        defeated = []
 
         for card in alive_this_pass:
             if card["health"] <= 0:
@@ -162,20 +191,20 @@ async def run_battle(bot, battle_id, player1, player2, guild, channel):
                 target = random.choice(targets)
 
             dmg, crit, dtype, dodged = combat_damage(card["attack"], target.get("speed", 0))
+            action = f"⚔️ **{card['card_name']}** ({owner.display_name}) → "
             if dtype == "miss":
-                actions.append(f"⚔️ **{card['card_name']}** → ☁️ Misses **{target['card_name']}**")
+                action += f"☁️ Misses **{target['card_name']}**"
             elif dtype == "dodge":
-                actions.append(f"⚔️ **{card['card_name']}** → 💨 **{target['card_name']}** dodges!")
+                action += f"💨 **{target['card_name']}** dodges!"
             else:
                 target["health"] -= dmg
                 crit_text = " 💥**CRIT!**" if crit else ""
-                actions.append(f"⚔️ **{card['card_name']}** → **{target['card_name']}** **{dmg}** dmg{crit_text}")
+                action += f"**{target['card_name']}** **-{dmg}**{crit_text}"
+            actions.append(action)
 
             if target["health"] <= 0:
-                defeated.append(target["card_name"])
                 actions.append(f"💀 **{target['card_name']}** defeated!")
 
-        # Show HP statuses
         status_lines = []
         for pid, pdata in battle.players.items():
             member = pdata["member"]
@@ -188,7 +217,7 @@ async def run_battle(bot, battle_id, player1, player2, guild, channel):
                     lines.append(f"{c['card_name']} {hp_bar(c['health'], max_hp)}")
             status_lines.append(f"**{member.display_name}**\n" + "\n".join(lines))
 
-        round_embed.description = "\n".join(actions) if actions else "No actions this round."
+        round_embed.description = "\n".join(actions) if actions else "No actions."
         round_embed.add_field(name="📊 Status", value="\n\n".join(status_lines), inline=False)
         await channel.send(embed=round_embed)
         await asyncio.sleep(2)
@@ -197,45 +226,59 @@ async def run_battle(bot, battle_id, player1, player2, guild, channel):
     if winner_id:
         finish_battle(battle_id, winner_id)
         winner_member = battle.players[winner_id]["member"]
-        win_embed = discord.Embed(
+        await channel.send(embed=discord.Embed(
             title=f"🏆 {winner_member.display_name} wins!",
             color=0xFFD700,
-        )
-        await channel.send(embed=win_embed)
+        ))
 
 
 async def _pick_target_ephemeral(player, card, targets, channel):
-    embed = discord.Embed(
-        title=f"🎯 Choose target",
-        description=f"**{card['card_name']}** (HP:{card['health']} ATK:{card['attack']}) is attacking!",
-        color=0xFF0000,
-    )
-    options = [discord.SelectOption(label=f"{t['card_name']} [{t['rarity']}] HP:{t['health']}", value=str(t["id"])) for t in targets[:25]]
-
-    view = discord.ui.View(timeout=60)
-    select = discord.ui.Select(placeholder="Select target...", options=options)
     chosen_target = [None]
 
-    async def select_cb(interaction):
+    view = discord.ui.View(timeout=BATTLE_TIMEOUT)
+    btn = discord.ui.Button(label=f"Target for {card['card_name']}", style=discord.ButtonStyle.danger, emoji="🎯")
+
+    async def btn_cb(interaction):
         if interaction.user.id != player.id:
             await interaction.response.send_message("❌ Not your turn!", ephemeral=True)
             return
-        chosen_id = int(interaction.data["values"][0])
-        chosen_target[0] = chosen_id
-        t_name = next((t["card_name"] for t in targets if t["id"] == chosen_id), str(chosen_id))
-        await interaction.response.edit_message(
-            content=f"🎯 Targeting **{t_name}**!",
-            embed=None, view=None
-        )
 
-    select.callback = select_cb
-    view.add_item(select)
-    msg = await channel.send(f"{player.mention}, choose your target:", embed=embed, view=view)
+        options = [discord.SelectOption(
+            label=f"{t['card_name']} [{t['rarity']}] HP:{t['health']}",
+            value=str(t["id"])
+        ) for t in targets[:25]]
+
+        select_view = discord.ui.View(timeout=BATTLE_TIMEOUT)
+        select = discord.ui.Select(placeholder="Choose target...", options=options)
+
+        async def select_cb(inner_interaction):
+            if inner_interaction.user.id != player.id:
+                await inner_interaction.response.send_message("❌ Not yours!", ephemeral=True)
+                return
+            chosen_id = int(inner_interaction.data["values"][0])
+            chosen_target[0] = chosen_id
+            t_name = next((t["card_name"] for t in targets if t["id"] == chosen_id), "?")
+            await inner_interaction.response.edit_message(content=f"✅ Targeting **{t_name}**!", embed=None, view=None)
+
+        select.callback = select_cb
+        select_view.add_item(select)
+        await interaction.response.send_message("🎯 Pick your target:", view=select_view, ephemeral=True)
+
+    btn.callback = btn_cb
+    view.add_item(btn)
+    msg = await channel.send(f"🎯 {player.mention}, target for **{card['card_name']}**", view=view)
 
     for _ in range(BATTLE_TIMEOUT):
         await asyncio.sleep(1)
         if chosen_target[0] is not None:
+            for item in view.children:
+                item.disabled = True
+            t_name = next((t["card_name"] for t in targets if t["id"] == chosen_target[0]), "?")
+            await msg.edit(content=f"✅ Targeting **{t_name}**", view=view)
             return next((t for t in targets if t["id"] == chosen_target[0]), None)
 
     await channel.send(f"⏰ {player.display_name}'s target selection timed out!")
+    for item in view.children:
+        item.disabled = True
+    await msg.edit(content=f"⏰ Timed out", view=view)
     return None
