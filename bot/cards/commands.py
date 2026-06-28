@@ -292,12 +292,12 @@ def setup_card_commands(bot: commands.Bot):
 
     @bot.tree.command(name="card_rarities", description="Show card counts by rarity", guild=guild)
     async def card_rarities(interaction: discord.Interaction):
-        counts = get_card_counts_by_rarity()
-        total = sum(counts.values())
+        counts, raw_total = get_card_counts_by_rarity()
+        total_instances = sum(counts.values())
+        total_templates = len(get_all_templates())
         lines = []
         for r in ["S", "A", "B", "C", "D", "F"]:
             c = counts.get(r, 0)
-            color = RARITY_COLORS.get(r, 0x808080)
             line = f"{'⬜' if r == 'S' else '🟦' if r == 'A' else '🟪' if r == 'B' else '🟣' if r == 'C' else '🟥' if r == 'D' else '🟧'} **{r}:** {c}"
             lines.append(line)
         embed = discord.Embed(
@@ -305,7 +305,8 @@ def setup_card_commands(bot: commands.Bot):
             description="\n".join(lines),
             color=0x808080,
         )
-        embed.set_footer(text=f"Total: {total}")
+        discrepancy = f"  |  ⚠️ {raw_total - total_instances} ungrouped" if raw_total != total_instances else ""
+        embed.set_footer(text=f"Instances: {total_instances}  |  Templates: {total_templates}{discrepancy}")
         await interaction.response.send_message(embed=embed)
 
     @bot.tree.command(name="battle", description="Battle another player's cards!", guild=guild)
