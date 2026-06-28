@@ -10,6 +10,7 @@ from bot.cards.db import (
     get_all_templates, get_completion, get_owned_template_ids,
     add_card_template, delete_card_template, create_battle, insert_card_instance,
     get_card_counts_by_rarity, get_template_counts_by_rarity,
+    search_templates_by_stats,
 )
 from bot.cards.models import generate_card, RARITY_COLORS, compute_ovr, compute_rarity, apply_modifiers
 from bot.cards.battle import run_battle
@@ -335,6 +336,25 @@ def setup_card_commands(bot: commands.Bot):
             embed = discord.Embed(title=title, description="\n".join(lines), color=0x808080)
             embed.set_footer(text=f"Templates: {total_templates}  |  Instances: {total_instances}{discrepancy}")
         await interaction.response.send_message(embed=embed)
+
+    @bot.tree.command(name="card_search", description="Search templates by base stats (OVR, HP, ATK, SPD)", guild=guild)
+    @app_commands.describe(min_ovr="Minimum OVR", max_ovr="Maximum OVR", min_hp="Minimum HP", max_hp="Maximum HP", min_atk="Minimum ATK", max_atk="Maximum ATK", min_spd="Minimum SPD", max_spd="Maximum SPD")
+    async def card_search(interaction: discord.Interaction, min_ovr: int = 0, max_ovr: int = 99999, min_hp: int = 0, max_hp: int = 99999, min_atk: int = 0, max_atk: int = 99999, min_spd: int = 0, max_spd: int = 99999):
+        results = search_templates_by_stats(min_ovr, max_ovr, min_hp, max_hp, min_atk, max_atk, min_spd, max_spd)
+        if not results:
+            await interaction.response.send_message("❌ No templates match those filters.", ephemeral=True)
+            return
+        lines = [f"**{t['name']}** [{t['rarity']}] OVR:{t['ovr']} HP:{t['health']} ATK:{t['attack']} SPD:{t['speed']}" for t in results[:25]]
+        embed = discord.Embed(
+            title=f"🔍 Templates ({len(results)} found)",
+            description="\n".join(lines),
+            color=0x808080,
+        )
+        if len(results) > 25:
+            embed.set_footer(text=f"Showing 25 of {len(results)}")
+        else:
+            embed.set_footer(text=f"{len(results)} results")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @bot.tree.command(name="battle", description="Battle another player's cards!", guild=guild)
     @app_commands.describe(player="Opponent")

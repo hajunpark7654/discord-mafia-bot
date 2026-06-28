@@ -124,6 +124,31 @@ def add_card_template(name, health=1000, attack=500, speed=200, rarity="F", imag
     conn.close()
 
 
+def search_templates_by_stats(min_ovr=0, max_ovr=99999, min_hp=0, max_hp=99999, min_atk=0, max_atk=99999, min_spd=0, max_spd=99999):
+    conn = Connection()
+    try:
+        sql = q("""SELECT ct.*, (2*ct.attack + ct.health + ct.speed) as ovr
+                   FROM card_templates ct
+                   WHERE (2*ct.attack + ct.health + ct.speed) >= ? AND (2*ct.attack + ct.health + ct.speed) <= ?
+                   AND ct.health >= ? AND ct.health <= ?
+                   AND ct.attack >= ? AND ct.attack <= ?
+                   AND ct.speed >= ? AND ct.speed <= ?
+                   ORDER BY ovr DESC""")
+        cur = conn.execute(sql, (min_ovr, max_ovr, min_hp, max_hp, min_atk, max_atk, min_spd, max_spd))
+        col_keys = [d[0] for d in cur.description] if USE_PG else None
+        rows = cur.fetchall()
+        conn.close()
+        if USE_PG:
+            return [dict(zip(col_keys, r)) for r in rows]
+        return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"search_templates error: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        conn.close()
+        raise
+
+
 def get_all_templates():
     conn = Connection()
     try:
