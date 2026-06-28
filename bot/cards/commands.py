@@ -9,7 +9,7 @@ from bot.cards.db import (
     get_player_cards, get_card_instance, transfer_card,
     get_all_templates, get_completion, get_owned_template_ids,
     add_card_template, delete_card_template, create_battle, insert_card_instance,
-    get_card_counts_by_rarity,
+    get_card_counts_by_rarity, get_template_counts_by_rarity,
 )
 from bot.cards.models import generate_card, RARITY_COLORS, compute_ovr, compute_rarity, apply_modifiers
 from bot.cards.battle import run_battle
@@ -291,22 +291,49 @@ def setup_card_commands(bot: commands.Bot):
         await interaction.response.send_message(embed=embed)
 
     @bot.tree.command(name="card_rarities", description="Show card counts by rarity", guild=guild)
-    async def card_rarities(interaction: discord.Interaction):
-        counts, raw_total = get_card_counts_by_rarity()
-        total_instances = sum(counts.values())
-        total_templates = len(get_all_templates())
-        lines = []
-        for r in ["S", "A", "B", "C", "D", "F"]:
-            c = counts.get(r, 0)
-            line = f"{'⬜' if r == 'S' else '🟦' if r == 'A' else '🟪' if r == 'B' else '🟣' if r == 'C' else '🟥' if r == 'D' else '🟧'} **{r}:** {c}"
-            lines.append(line)
-        embed = discord.Embed(
-            title=f"📊 Card Rarity Distribution",
-            description="\n".join(lines),
-            color=0x808080,
-        )
-        discrepancy = f"  |  ⚠️ {raw_total - total_instances} ungrouped" if raw_total != total_instances else ""
-        embed.set_footer(text=f"Instances: {total_instances}  |  Templates: {total_templates}{discrepancy}")
+    @app_commands.describe(type="What to count: instances (caught cards), templates (available types), or both")
+    @app_commands.choices(type=[
+        app_commands.Choice(name="Both", value="both"),
+        app_commands.Choice(name="Instances (caught cards)", value="instances"),
+        app_commands.Choice(name="Templates (available types)", value="templates"),
+    ])
+    async def card_rarities(interaction: discord.Interaction, type: str = "both"):
+        title = "📊 Card Rarity Distribution"
+        if type == "templates":
+            counts = get_template_counts_by_rarity()
+            total = sum(counts.values())
+            lines = []
+            for r in ["S", "A", "B", "C", "D", "F"]:
+                c = counts.get(r, 0)
+                line = f"{'⬜' if r == 'S' else '🟦' if r == 'A' else '🟪' if r == 'B' else '🟣' if r == 'C' else '🟥' if r == 'D' else '🟧'} **{r}:** {c}"
+                lines.append(line)
+            embed = discord.Embed(title=title, description="\n".join(lines), color=0x808080)
+            embed.set_footer(text=f"Templates: {total}")
+        elif type == "instances":
+            counts, raw_total = get_card_counts_by_rarity()
+            total = sum(counts.values())
+            lines = []
+            for r in ["S", "A", "B", "C", "D", "F"]:
+                c = counts.get(r, 0)
+                line = f"{'⬜' if r == 'S' else '🟦' if r == 'A' else '🟪' if r == 'B' else '🟣' if r == 'C' else '🟥' if r == 'D' else '🟧'} **{r}:** {c}"
+                lines.append(line)
+            discrepancy = f"  |  ⚠️ {raw_total - total} ungrouped" if raw_total != total else ""
+            embed = discord.Embed(title=title, description="\n".join(lines), color=0x808080)
+            embed.set_footer(text=f"Instances: {total}{discrepancy}")
+        else:
+            t_counts = get_template_counts_by_rarity()
+            i_counts, raw_total = get_card_counts_by_rarity()
+            total_templates = sum(t_counts.values())
+            total_instances = sum(i_counts.values())
+            lines = []
+            for r in ["S", "A", "B", "C", "D", "F"]:
+                tc = t_counts.get(r, 0)
+                ic = i_counts.get(r, 0)
+                line = f"{'⬜' if r == 'S' else '🟦' if r == 'A' else '🟪' if r == 'B' else '🟣' if r == 'C' else '🟥' if r == 'D' else '🟧'} **{r}:** {tc} templates / {ic} instances"
+                lines.append(line)
+            discrepancy = f"  |  ⚠️ {raw_total - total_instances} ungrouped" if raw_total != total_instances else ""
+            embed = discord.Embed(title=title, description="\n".join(lines), color=0x808080)
+            embed.set_footer(text=f"Templates: {total_templates}  |  Instances: {total_instances}{discrepancy}")
         await interaction.response.send_message(embed=embed)
 
     @bot.tree.command(name="battle", description="Battle another player's cards!", guild=guild)
