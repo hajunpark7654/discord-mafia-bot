@@ -20,6 +20,7 @@ class CardBattle:
         self.players = {player1.id: {"member": player1, "cards": p1_cards},
                         player2.id: {"member": player2, "cards": p2_cards}}
         self.turn_order = []
+        self.cancelled = False
         self._build_turn_order()
 
     def _build_turn_order(self):
@@ -80,6 +81,22 @@ async def _run_battle(bot, battle_id, player1, player2, guild, channel):
 
     battle = CardBattle(battle_id, player1, player2, p1_cards, p2_cards)
 
+    forfeit_view = discord.ui.View(timeout=None)
+    async def forfeit_cb(interaction):
+        if interaction.user.id not in (player1.id, player2.id):
+            await interaction.response.send_message("❌ You're not in this battle!", ephemeral=True)
+            return
+        battle.cancelled = True
+        for item in forfeit_view.children:
+            item.disabled = True
+        await interaction.response.edit_message(view=forfeit_view)
+        await channel.send(f"⛔ **{interaction.user.display_name}** forfeited! Battle ended.")
+
+    forfeit_btn = discord.ui.Button(label="Forfeit", style=discord.ButtonStyle.danger, emoji="🏳️")
+    forfeit_btn.callback = forfeit_cb
+    forfeit_view.add_item(forfeit_btn)
+    forfeit_msg = await channel.send("🏳️ Click to forfeit:", view=forfeit_view)
+
     await channel.send(embed=discord.Embed(
         title=f"⚔️ Battle: {player1.display_name} vs {player2.display_name}",
         color=0xFF4500,
@@ -134,9 +151,12 @@ async def _run_battle(bot, battle_id, player1, player2, guild, channel):
     )
 
     for _ in range(120):
-        if not pending_pids:
+        if not pending_pids or battle.cancelled:
             break
         await asyncio.sleep(1)
+
+    if battle.cancelled:
+        return
 
     # Resolve picks
     for pid in [player1.id, player2.id]:
@@ -178,7 +198,7 @@ async def _run_battle(bot, battle_id, player1, player2, guild, channel):
     await channel.send(embed=lineup_embed)
 
     turn_num = 0
-    while not battle.is_finished():
+    while not battle.is_finished() and not battle.cancelled:
         turn_num += 1
         alive_this_pass = [c for c in battle.turn_order if c["health"] > 0]
 
@@ -198,6 +218,8 @@ async def _run_battle(bot, battle_id, player1, player2, guild, channel):
                 break
 
             target = await _pick_target_ephemeral(owner, card, targets, channel)
+            if battle.cancelled:
+                return
             if target is None:
                 target = random.choice(targets)
 
@@ -232,6 +254,10 @@ async def _run_battle(bot, battle_id, player1, player2, guild, channel):
         round_embed.add_field(name="📊 Status", value="\n\n".join(status_lines), inline=False)
         await channel.send(embed=round_embed)
         await asyncio.sleep(2)
+
+    for item in forfeit_view.children:
+        item.disabled = True
+    await forfeit_msg.edit(view=forfeit_view)
 
     winner_id = battle.get_winner()
     if winner_id:
