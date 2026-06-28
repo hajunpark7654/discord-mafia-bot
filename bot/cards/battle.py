@@ -133,9 +133,12 @@ async def _run_battle(bot, battle_id, player1, player2, guild, channel):
                 await inner_interaction.response.send_message("❌ Not yours!", ephemeral=True)
                 return
             chosen = [int(v) for v in inner_interaction.data["values"]]
+            if len(chosen) != 3:
+                await inner_interaction.response.send_message("❌ You must pick exactly 3 cards!", ephemeral=True)
+                return
             pick_results[pid] = chosen
             pending_pids.remove(pid)
-            await inner_interaction.response.edit_message(content=f"✅ Selected {len(chosen)} cards!", embed=None, view=None)
+            await inner_interaction.response.edit_message(content=f"✅ Selected 3 cards!", embed=None, view=None)
 
         select.callback = inner_select
         select_view.add_item(select)
