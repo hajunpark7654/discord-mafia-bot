@@ -254,10 +254,8 @@ class BossBattle:
 
             target = random.choice(alive)
             card = self.player_cards.get(target, {})
-            dmg, crit, dtype, dodged = combat_damage(self.effective_boss_atk(), card.get("speed", 0))
-            if dtype == "miss":
-                round_lines.append(f"👹 **{self.template['name']}** attacks {self._mention(target)}'s **{card.get('card_name','?')}** but **misses**!")
-            elif dtype == "dodge":
+            dmg, crit, dtype, dodged, _, _ = combat_damage(self.effective_boss_atk(), card.get("speed", 0))
+            if dtype == "dodge":
                 round_lines.append(f"👹 **{self.template['name']}** attacks {self._mention(target)}'s **{card.get('card_name','?')}** but it **dodges**!")
             else:
                 card["health"] = card.get("health", 1) - dmg
@@ -299,9 +297,9 @@ class BossBattle:
                 key=lambda x: x[1].get("speed", 0), reverse=True
             )
             for pid, pc in spd_order:
-                dmg, crit, dtype, dodged = combat_damage(pc.get("attack", 1))
-                if dtype in ("miss", "dodge"):
-                    round_lines.append(f"⚔️ {self._mention(pid)}'s **{pc.get('card_name','?')}** attacks but **{dtype}s**!")
+                dmg, crit, dtype, dodged, _, _ = combat_damage(pc.get("attack", 1))
+                if dtype == "dodge":
+                    round_lines.append(f"⚔️ {self._mention(pid)}'s **{pc.get('card_name','?')}** attacks but **dodges**!")
                     continue
                 actual = min(dmg, self.boss_hp)
                 self.boss_hp -= actual

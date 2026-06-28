@@ -21,6 +21,7 @@ class CardBattle:
                         player2.id: {"member": player2, "cards": p2_cards}}
         self.turn_order = []
         self.cancelled = False
+        self.flinched = set()
         self._build_turn_order()
 
     def _build_turn_order(self):
@@ -214,6 +215,10 @@ async def _run_battle(bot, battle_id, player1, player2, guild, channel):
         for card in alive_this_pass:
             if card["health"] <= 0:
                 continue
+            if card["id"] in battle.flinched:
+                actions.append(f"😵 **{card['card_name']}** is flinched and can't attack!")
+                battle.flinched.discard(card["id"])
+                continue
             owner_id = card["_owner"]
             owner = battle.players[owner_id]["member"]
             targets = battle.get_valid_targets(owner_id)
@@ -226,16 +231,27 @@ async def _run_battle(bot, battle_id, player1, player2, guild, channel):
             if target is None:
                 target = random.choice(targets)
 
-            dmg, crit, dtype, dodged = combat_damage(card["attack"], target.get("speed", 0))
+            dmg, crit, dtype, dodged, flinch, black_flash = combat_damage(
+                card["attack"], target.get("speed", 0), card["speed"]
+            )
             action = f"⚔️ **{card['card_name']}** ({owner.display_name}) → "
-            if dtype == "miss":
-                action += f"☁️ Misses **{target['card_name']}**"
-            elif dtype == "dodge":
+            if dtype == "dodge":
                 action += f"💨 **{target['card_name']}** dodges!"
             else:
                 target["health"] -= dmg
-                crit_text = " 💥**CRIT!**" if crit else ""
-                action += f"**{target['card_name']}** **-{dmg}**{crit_text}"
+                if black_flash:
+                    heal = round(card["_max_health"] * 0.2)
+                    card["health"] = min(card["_max_health"], card["health"] + heal)
+                    action += f"💥**BLACK FLASH!** **{target['card_name']}** **-{dmg}**"
+                    if heal > 0:
+                        action += f" 💚 **{card['card_name']}** heals **{heal}**"
+                elif crit:
+                    action += f"💥**CRIT!** **{target['card_name']}** **-{dmg}**"
+                else:
+                    action += f"**{target['card_name']}** **-{dmg}**"
+                if flinch:
+                    battle.flinched.add(target["id"])
+                    action += " 😵 (flinched)"
             actions.append(action)
 
             if target["health"] <= 0:

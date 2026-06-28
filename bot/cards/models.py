@@ -28,18 +28,20 @@ def compute_rarity(ovr):
     return "F"
 
 
-def combat_damage(attack, target_spd=0):
-    if random.random() < 0.05:
-        return 0, False, "miss", False
+def combat_damage(attack, target_spd=0, attacker_spd=0):
     if random.random() < target_spd / 10000:
-        return 0, False, "dodge", True
+        return 0, False, "dodge", True, False, False
     reduction = random.randint(0, 10) / 100
     dmg = max(1, round(attack * (1 - reduction)))
     crit = random.random() < 0.10
+    flinch = attacker_spd > target_spd and target_spd > 0 and random.random() < 0.10
+    if crit and flinch:
+        dmg = round(dmg * 2.0)
+        return dmg, True, "black_flash", False, True, True
     if crit:
         dmg = round(dmg * 1.5)
-        return dmg, True, "crit", False
-    return dmg, False, "hit", False
+        return dmg, True, "crit", False, flinch, False
+    return dmg, False, "hit", False, flinch, False
 
 
 def roll_modifier():
