@@ -145,7 +145,9 @@ class BossBattle:
 
         self.scale_hp()
 
-        pick_tasks = {}  # pid -> {"chosen": card_id or None, "cards": list, "name": str}
+        await self.channel.send("📬 **Check your DMs to pick your boss battle card!** (60s to choose)")
+
+        pick_tasks = {}
         pending = 0
         for pid in self.players:
             cards = get_player_cards(pid)
@@ -164,8 +166,8 @@ class BossBattle:
             pending += 1
 
             embed = discord.Embed(
-                title=f"🎴 {name}: Choose your boss battle card!",
-                description="Pick the card you'll fight with.",
+                title=f"🎴 Choose your boss battle card!",
+                description=f"Pick the card you'll fight **{self.template['name']}** with.\nYou have 60 seconds.",
                 color=0x00FF00,
             )
             options = [discord.SelectOption(
@@ -176,18 +178,25 @@ class BossBattle:
             view = discord.ui.View(timeout=70)
             select = discord.ui.Select(placeholder="Choose your card...", options=options)
 
-            async def select_cb(interaction, pid=pid):
+            async def select_cb(interaction, pid=pid, cards=cards):
                 if interaction.user.id != pid:
-                    await interaction.response.send_message("❌ Not your turn!", ephemeral=True)
+                    await interaction.response.send_message("❌ Not your card selection!", ephemeral=True)
                     return
-                pick_tasks[pid]["chosen"] = int(select.values[0])
-                await interaction.response.edit_message(content=f"✅ {name} selected a card!", embed=None, view=None)
+                chosen_id = int(select.values[0])
+                pick_tasks[pid]["chosen"] = chosen_id
+                card_name = next(c["card_name"] for c in cards if c["id"] == chosen_id)
+                await interaction.response.edit_message(content=f"✅ Selected **{card_name}**!", embed=None, view=None)
 
             select.callback = select_cb
             view.add_item(select)
-            await self.channel.send(embed=embed, view=view)
+
+            try:
+                await member.send(embed=embed, view=view)
+            except:
+                await self.channel.send(f"{self._mention(pid)} — choose your card:", embed=embed, view=view)
 
         if pending > 0:
+            await self.channel.send(f"⏳ Waiting for {pending} player(s) to pick a card...")
             for _ in range(60):
                 if all(t["chosen"] is not None for t in pick_tasks.values()):
                     break
