@@ -767,9 +767,15 @@ def setup_card_commands(bot: commands.Bot):
 
     @bot.tree.command(name="collector", description="View your collector quest progress", guild=guild)
     async def collector_show(interaction: discord.Interaction):
-        progress = get_all_progress(interaction.user.id)
+        await interaction.response.defer(ephemeral=True)
+        try:
+            progress = get_all_progress(interaction.user.id)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error loading progress: {e}", ephemeral=True)
+            return
+
         if not progress:
-            await interaction.response.send_message("❌ No templates exist yet.", ephemeral=True)
+            await interaction.followup.send("❌ No templates exist yet.", ephemeral=True)
             return
 
         lines = []
@@ -786,16 +792,16 @@ def setup_card_commands(bot: commands.Bot):
             lines.append(f"{status} **{name}** [{tier}] Base:{base_s} Shiny:{shiny_s} Myth:{myth_s}")
 
         if not lines:
-            await interaction.response.send_message("You don't own any cards yet.", ephemeral=True)
+            await interaction.followup.send("You don't own any cards yet.", ephemeral=True)
             return
 
         embed = discord.Embed(
             title="📋 Collector Quests",
-            description="\n".join(lines),
+            description="\n".join(lines[:25]),
             color=0xFFD700,
         )
         embed.set_footer(text="🔷 = eligible to claim | ✅ = already claimed | /collector claim <template>")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @bot.tree.command(name="collector_claim", description="Claim collector reward for a template", guild=guild)
     @app_commands.describe(template_name="Template name to claim")

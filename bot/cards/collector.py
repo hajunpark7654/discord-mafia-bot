@@ -1,6 +1,6 @@
 import discord
 from bot.database.driver import Connection, USE_PG, q
-from bot.cards.db import get_all_templates, get_card_counts_by_rarity
+from bot.cards.db import get_all_templates
 from bot.database.db import add_points
 
 COLLECTOR_TIERS = {
@@ -15,28 +15,48 @@ COLLECTOR_TIERS = {
 COLLECTOR_ROLE_NAME = "Tier 1 Collector"
 
 
-def _count_cards(owner_id, template_id):
+def _count_all_cards(owner_id, template_ids):
+    result = {tid: {"base": 0, "shiny": 0, "mythical": 0} for tid in template_ids}
+    if not template_ids:
+        return result
     conn = Connection()
+    placeholders = ",".join("?" * len(template_ids))
     cur = conn.execute(q(
-        "SELECT "
-        "  SUM(CASE WHEN (is_shiny = 0 OR is_shiny IS NULL) AND (is_mythical = 0 OR is_mythical IS NULL) THEN 1 ELSE 0 END) as base_count, "
-        "  SUM(CASE WHEN is_shiny = 1 OR is_mythical = 1 THEN 1 ELSE 0 END) as shiny_count, "
-        "  SUM(CASE WHEN is_mythical = 1 THEN 1 ELSE 0 END) as mythical_count "
-        "FROM card_instances WHERE owner_id = ? AND template_id = ?"
-    ), (owner_id, template_id))
-    row = cur.fetchone()
+        "SELECT template_id, "
+        "  SUM(CASE WHEN (is_shiny = 0 OR is_shiny IS NULL) AND (is_mythical = 0 OR is_mythical IS NULL) THEN 1 ELSE 0 END), "
+        "  SUM(CASE WHEN is_shiny = 1 OR is_mythical = 1 THEN 1 ELSE 0 END), "
+        "  SUM(CASE WHEN is_mythical = 1 THEN 1 ELSE 0 END) "
+        f"FROM card_instances WHERE owner_id = ? AND template_id IN ({placeholders}) "
+        "GROUP BY template_id"
+    ), (owner_id, *template_ids))
+    for row in (cur.fetchall() if USE_PG else cur):
+        tid, base, shiny, mythical = row
+        result[tid] = {"base": base or 0, "shiny": shiny or 0, "mythical": mythical or 0}
     conn.close()
-    if USE_PG:
-        return {"base": row[0] or 0, "shiny": row[1] or 0, "mythical": row[2] or 0}
-    return {"base": row[0] or 0, "shiny": row[1] or 0, "mythical": row[2] or 0}
+    return result
+
+
+def _count_single(owner_id, template_id):
+    return _count_all_cards(owner_id, [template_id]).get(template_id, {"base": 0, "shiny": 0, "mythical": 0})
+
+
+def _batch_is_claimed(user_id, template_ids):
+    result = {tid: False for tid in template_ids}
+    if not template_ids:
+        return result
+    conn = Connection()
+    placeholders = ",".join("?" * len(template_ids))
+    cur = conn.execute(q(
+        f"SELECT template_id FROM collector_claims WHERE user_id = ? AND template_id IN ({placeholders})"
+    ), (user_id, *template_ids))
+    for row in (cur.fetchall() if USE_PG else cur):
+        result[row[0]] = True
+    conn.close()
+    return result
 
 
 def _is_claimed(user_id, template_id):
-    conn = Connection()
-    cur = conn.execute(q("SELECT 1 FROM collector_claims WHERE user_id = ? AND template_id = ?"), (user_id, template_id))
-    row = cur.fetchone()
-    conn.close()
-    return row is not None
+    return _batch_is_claimed(user_id, [template_id]).get(template_id, False)
 
 
 def _record_claim(user_id, template_id):
@@ -86,8 +106,8 @@ def _delete_required_cards(owner_id, template_id, req):
     to_delete.extend(normal_ids[:req["base"]])
 
     if to_delete:
-        placeholders = ",".join("?" * len(to_delete))
-        conn.execute(q(f"DELETE FROM card_instances WHERE id IN ({placeholders})"), tuple(to_delete))
+        ins = ",".join("?" * len(to_delete))
+        conn.execute(q(f"DELETE FROM card_instances WHERE id IN ({ins})"), tuple(to_delete))
     conn.commit()
     conn.close()
 
@@ -100,18 +120,20 @@ def _get_claim_count(user_id):
     return row[0] if row else 0
 
 
-def get_quest_progress(user_id, template_id):
-    tid = template_id if isinstance(template_id, int) else None
-    counts = _count_cards(user_id, tid)
-    claimed = _is_claimed(user_id, tid)
-    return counts, claimed
-
-
 def get_all_progress(user_id):
     templates = get_all_templates()
+    if not templates:
+        return []
+
+    tids = [t["id"] for t in templates]
+    counts_map = _count_all_cards(user_id, tids)
+    claims_map = _batch_is_claimed(user_id, tids)
+
     results = []
     for t in templates:
-        counts, claimed = get_quest_progress(user_id, t["id"])
+        tid = t["id"]
+        counts = counts_map[tid]
+        claimed = claims_map[tid]
         tier = t.get("rarity", "F")
         if tier not in COLLECTOR_TIERS:
             continue
@@ -150,7 +172,7 @@ async def claim_quest(user_id, template_id, guild):
     if _is_claimed(user_id, template_id):
         return False, "You already claimed this template!"
 
-    counts = _count_cards(user_id, template_id)
+    counts = _count_single(user_id, template_id)
     if counts["base"] < req["base"]:
         return False, f"Not enough base cards ({counts['base']}/{req['base']})."
     if counts["shiny"] < req["shiny"]:
@@ -180,7 +202,7 @@ async def claim_quest(user_id, template_id, guild):
 
     _record_claim(user_id, template_id)
 
-    msg = f"Claimed **{template['name']}** [{tier}]!" + f" +**{points}** points."
+    msg = f"Claimed **{template['name']}** [{tier}]! +**{points}** points."
     if is_first:
         msg += f" You also earned the **{COLLECTOR_ROLE_NAME}** role!"
     return True, msg
