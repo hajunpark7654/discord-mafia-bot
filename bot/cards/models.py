@@ -58,8 +58,8 @@ def apply_modifiers(health, attack, speed, h_mod, a_mod, s_mod):
 
 CATCH_SHINY_CHANCE = 0.01
 CATCH_MYTHICAL_CHANCE = 0.001
-MAFIA_SHINY_CHANCE = 0.05
-MAFIA_MYTHICAL_CHANCE = 0.01
+MAFIA_SHINY_CHANCE = 0.10
+MAFIA_MYTHICAL_CHANCE = 0.05
 
 
 def generate_card(template, from_mafia=False):

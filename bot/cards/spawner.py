@@ -68,7 +68,7 @@ class CardSpawner:
 
         embed = Embed(
             title=f"🌟 A wild card appeared!",
-            description=f"**{template['name']}**\n\nFirst to catch it gets the card!",
+            description=f"**{template['name']}**\n\nCatch available in **5 seconds**...",
             color=0x00FF00,
         )
         if template.get("image_url"):
@@ -77,6 +77,7 @@ class CardSpawner:
         view = CatchView(template, self.bot)
         msg = await channel.send(embed=embed, view=view)
         view.message = msg
+        asyncio.create_task(view.enable_after_delay(5))
 
         await asyncio.sleep(CATCH_TIMEOUT)
         if not view.caught:
@@ -94,7 +95,16 @@ class CatchView(discord.ui.View):
         self.message = None
         self.override_card = None
 
-    @discord.ui.button(label="Catch!", style=ButtonStyle.primary, emoji="🎴")
+    async def enable_after_delay(self, delay=5):
+        await asyncio.sleep(delay)
+        for item in self.children:
+            if isinstance(item, discord.ui.Button) and item.custom_id == "catch_btn":
+                item.disabled = False
+                item.label = "Catch!"
+        if self.message:
+            await self.message.edit(view=self)
+
+    @discord.ui.button(label="⏳", style=ButtonStyle.secondary, emoji="🎴", custom_id="catch_btn", disabled=True)
     async def catch_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.caught:
             await interaction.response.send_message("❌ Already caught!", ephemeral=True)

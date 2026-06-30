@@ -274,7 +274,7 @@ def get_random_template_for_mafia():
             tiers["F"].append(t)
 
     # Mafia: only B/A/S tiers, weighted 60/35/5
-    mafia_weights = {"B": 0.60, "A": 0.35, "S": 0.05}
+    mafia_weights = {"B": 0.50, "A": 0.35, "S": 0.15}
     available = {k: v for k, v in tiers.items() if v and k in mafia_weights}
     if not available:
         # fallback to all tiers if none of B/A/S exist

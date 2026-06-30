@@ -326,12 +326,12 @@ class BossBattle:
             reward_log = []
             for pid in self.players:
                 member = self.bot.get_user(pid)
-                reward_log.append(f"• {self._mention(pid)}: +20 points")
+                reward_log.append(f"• {self._mention(pid)}: +10 points")
                 if pid == winner:
-                    add_points(pid, 20)
+                    add_points(pid, 10)
                     card = generate_card(self.template, from_mafia=False)
-                    card["is_mythical"] = random.random() < 0.15
-                    card["is_shiny"] = not card["is_mythical"] and random.random() < 0.35
+                    card["is_mythical"] = random.random() < 0.10
+                    card["is_shiny"] = not card["is_mythical"] and random.random() < 0.25
                     card["ovr"] = compute_ovr(card["health"], card["attack"], card["speed"])
                     cid = insert_card_instance(
                         owner_id=pid,
@@ -381,14 +381,14 @@ class BossBattle:
 
                     if member:
                         try:
-                            await member.send(f"🏆 MVP! You defeated the boss and won **{card_name}** [{card['rarity']}]{shiny_s}{mythical_s} +**20** points!")
+                            await member.send(f"🏆 MVP! You defeated the boss and won **{card_name}** [{card['rarity']}]{shiny_s}{mythical_s} +**10** points!")
                         except:
                             pass
                 else:
-                    add_points(pid, 20)
+                    add_points(pid, 10)
                     if member:
                         try:
-                            await member.send(f"🏆 You helped defeat the boss! +**20** points!")
+                            await member.send(f"🏆 You helped defeat the boss! +**10** points!")
                         except:
                             pass
 
