@@ -43,6 +43,12 @@ def init_card_tables():
             started_at TEXT DEFAULT (NOW()),
             finished_at TEXT
         )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS collector_claims (
+            user_id BIGINT NOT NULL,
+            template_id INTEGER NOT NULL REFERENCES card_templates(id) ON DELETE CASCADE,
+            claimed_at TEXT DEFAULT (NOW()),
+            PRIMARY KEY (user_id, template_id)
+        )""")
         conn.execute("ALTER TABLE card_templates ADD COLUMN IF NOT EXISTS shiny_catch_image_url TEXT DEFAULT ''")
         conn.execute("ALTER TABLE card_templates ADD COLUMN IF NOT EXISTS mythical_catch_image_url TEXT DEFAULT ''")
         conn.execute("ALTER TABLE card_templates ADD COLUMN IF NOT EXISTS is_special INTEGER DEFAULT 0")
@@ -88,6 +94,12 @@ def init_card_tables():
             status TEXT DEFAULT 'pending',
             started_at TEXT DEFAULT (datetime('now')),
             finished_at TEXT
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS collector_claims (
+            user_id INTEGER NOT NULL,
+            template_id INTEGER NOT NULL,
+            claimed_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (user_id, template_id)
         )""")
     conn.commit()
     # Add new columns to existing databases

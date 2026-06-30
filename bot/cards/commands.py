@@ -15,6 +15,7 @@ from bot.cards.db import (
 from bot.cards.models import generate_card, RARITY_COLORS, compute_ovr, compute_rarity, apply_modifiers
 from bot.cards.battle import run_battle
 from bot.cards.spawner import CatchView, CATCH_TIMEOUT
+from bot.cards.collector import get_all_progress, claim_quest, COLLECTOR_TIERS, COLLECTOR_ROLE_NAME
 
 
 async def card_autocomplete(interaction: discord.Interaction, current: str):
@@ -763,6 +764,50 @@ def setup_card_commands(bot: commands.Bot):
         bb.skipped = True
         bb.cancelled = True
         await interaction.response.send_message("⛔ Boss battle cancelled!", ephemeral=True)
+
+    @bot.tree.command(name="collector", description="View your collector quest progress", guild=guild)
+    async def collector_show(interaction: discord.Interaction):
+        progress = get_all_progress(interaction.user.id)
+        if not progress:
+            await interaction.response.send_message("❌ No templates exist yet.", ephemeral=True)
+            return
+
+        lines = []
+        for p in progress[:25]:
+            t = p["template"]
+            req = p["req"]
+            c = p["counts"]
+            tier = p["tier"]
+            status = "✅" if p["claimed"] else ("🔷 COMPLETE!" if p["complete"] else "⬜")
+            name = t["name"]
+            base_s = f"{c['base']}/{req['base']}"
+            shiny_s = f"{c['shiny']}/{req['shiny']}" if req["shiny"] > 0 else "0/0"
+            myth_s = f"{c['mythical']}/{req['mythical']}" if req["mythical"] > 0 else "0/0"
+            lines.append(f"{status} **{name}** [{tier}] Base:{base_s} Shiny:{shiny_s} Myth:{myth_s}")
+
+        if not lines:
+            await interaction.response.send_message("You don't own any cards yet.", ephemeral=True)
+            return
+
+        embed = discord.Embed(
+            title="📋 Collector Quests",
+            description="\n".join(lines),
+            color=0xFFD700,
+        )
+        embed.set_footer(text="🔷 = eligible to claim | ✅ = already claimed | /collector claim <template>")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @bot.tree.command(name="collector_claim", description="Claim collector reward for a template", guild=guild)
+    @app_commands.describe(template_name="Template name to claim")
+    @app_commands.autocomplete(template_name=template_autocomplete)
+    async def collector_claim(interaction: discord.Interaction, template_name: str):
+        templates = [t for t in get_all_templates() if t["name"].lower().strip() == template_name.lower().strip()]
+        if not templates:
+            await interaction.response.send_message("❌ No template found with that name.", ephemeral=True)
+            return
+        template = templates[0]
+        success, msg = await claim_quest(interaction.user.id, template["id"], interaction.guild)
+        await interaction.response.send_message(msg, ephemeral=True)
 
     @bot.tree.command(name="auction", description="[ADMIN] Start a card auction", guild=guild)
     @app_commands.describe(card_id="Card ID to auction", min_bid="Minimum starting bid", instant_bid="Bid that instantly wins", duration="Auction duration in minutes")
