@@ -513,7 +513,7 @@ def setup_card_commands(bot: commands.Bot):
 
         embed = discord.Embed(
             title=f"🌟 A wild card appeared!",
-            description=f"**{template['name']}**\n\nFirst to catch it gets the card!",
+            description=f"**{template['name']}**\n\nCatch available in **5 seconds**...",
             color=0x00FF00,
         )
         if template.get("image_url"):
@@ -523,10 +523,10 @@ def setup_card_commands(bot: commands.Bot):
         view.override_card = card
         msg = await spawn_channel.send(embed=embed, view=view)
         view.message = msg
+        asyncio.create_task(view.enable_after_delay(5))
 
         await interaction.response.send_message(f"✅ Spawned **{template['name']}** in {spawn_channel.mention}!", ephemeral=True)
 
-        import asyncio
         await asyncio.sleep(CATCH_TIMEOUT)
         if not view.caught:
             for item in view.children:
