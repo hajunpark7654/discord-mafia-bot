@@ -778,30 +778,76 @@ def setup_card_commands(bot: commands.Bot):
             await interaction.followup.send("❌ No templates exist yet.", ephemeral=True)
             return
 
-        lines = []
-        for p in progress[:25]:
-            t = p["template"]
-            req = p["req"]
-            c = p["counts"]
-            tier = p["tier"]
-            status = "✅" if p["claimed"] else ("🔷 COMPLETE!" if p["complete"] else "⬜")
-            name = t["name"]
-            base_s = f"{c['base']}/{req['base']}"
-            shiny_s = f"{c['shiny']}/{req['shiny']}" if req["shiny"] > 0 else "0/0"
-            myth_s = f"{c['mythical']}/{req['mythical']}" if req["mythical"] > 0 else "0/0"
-            lines.append(f"{status} **{name}** [{tier}] Base:{base_s} Shiny:{shiny_s} Myth:{myth_s}")
+        class CollectorPaginator(discord.ui.View):
+            def __init__(self, data, user_id):
+                super().__init__(timeout=120)
+                self.data = data
+                self.user_id = user_id
+                self.per_page = 25
+                self.total_pages = max(1, (len(data) + self.per_page - 1) // self.per_page)
+                self.page = 1
+                self.message = None
 
-        if not lines:
-            await interaction.followup.send("You don't own any cards yet.", ephemeral=True)
-            return
+            def build_embed(self):
+                start = (self.page - 1) * self.per_page
+                page_data = self.data[start:start + self.per_page]
+                lines = []
+                for p in page_data:
+                    t = p["template"]
+                    req = p["req"]
+                    c = p["counts"]
+                    tier = p["tier"]
+                    status = "✅" if p["claimed"] else ("🔷" if p["complete"] else "⬜")
+                    name = t["name"]
+                    base_s = f"{c['base']}/{req['base']}"
+                    shiny_s = f"{c['shiny']}/{req['shiny']}" if req["shiny"] > 0 else ""
+                    myth_s = f"{c['mythical']}/{req['mythical']}" if req["mythical"] > 0 else ""
+                    extra = ""
+                    if shiny_s: extra += f" S:{shiny_s}"
+                    if myth_s: extra += f" M:{myth_s}"
+                    lines.append(f"{status} **{name}** [{tier}] B:{base_s}{extra}")
 
-        embed = discord.Embed(
-            title="📋 Collector Quests",
-            description="\n".join(lines[:25]),
-            color=0xFFD700,
-        )
-        embed.set_footer(text="🔷 = eligible to claim | ✅ = already claimed | /collector claim <template>")
-        await interaction.followup.send(embed=embed, ephemeral=True)
+                embed = discord.Embed(
+                    title="📋 Collector Quests",
+                    description="\n".join(lines) if lines else "No templates found.",
+                    color=0xFFD700,
+                )
+                embed.set_footer(text=f"Page {self.page}/{self.total_pages} | 🔷=claimable ✅=claimed")
+                return embed
+
+            @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
+            async def prev_page(self_, i: discord.Interaction, b: discord.ui.Button):
+                if i.user.id != self_.user_id:
+                    await i.response.send_message("❌ Not yours.", ephemeral=True)
+                    return
+                self_.page = max(1, self_.page - 1)
+                self_.children[0].disabled = self_.page == 1
+                self_.children[1].disabled = self_.page == self_.total_pages
+                await i.response.edit_message(embed=self_.build_embed(), view=self_)
+
+            @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
+            async def next_page(self_, i: discord.Interaction, b: discord.ui.Button):
+                if i.user.id != self_.user_id:
+                    await i.response.send_message("❌ Not yours.", ephemeral=True)
+                    return
+                self_.page = min(self_.total_pages, self_.page + 1)
+                self_.children[0].disabled = self_.page == 1
+                self_.children[1].disabled = self_.page == self_.total_pages
+                await i.response.edit_message(embed=self_.build_embed(), view=self_)
+
+            async def on_timeout(self_):
+                try:
+                    for item in self_.children:
+                        item.disabled = True
+                    await self_.message.edit(view=self_)
+                except:
+                    pass
+
+        view = CollectorPaginator(progress, interaction.user.id)
+        view.children[0].disabled = view.page == 1
+        view.children[1].disabled = view.total_pages <= 1
+        msg = await interaction.followup.send(embed=view.build_embed(), view=view, ephemeral=True)
+        view.message = msg
 
     @bot.tree.command(name="collector_claim", description="Claim collector reward for a template", guild=guild)
     @app_commands.describe(template_name="Template name to claim")

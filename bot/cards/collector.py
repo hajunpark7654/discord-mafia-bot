@@ -22,16 +22,16 @@ def _count_all_cards(owner_id, template_ids):
     conn = Connection()
     placeholders = ",".join("?" * len(template_ids))
     cur = conn.execute(q(
-        "SELECT template_id, "
-        "  SUM(CASE WHEN (is_shiny = 0 OR is_shiny IS NULL) AND (is_mythical = 0 OR is_mythical IS NULL) THEN 1 ELSE 0 END), "
-        "  SUM(CASE WHEN is_shiny = 1 OR is_mythical = 1 THEN 1 ELSE 0 END), "
-        "  SUM(CASE WHEN is_mythical = 1 THEN 1 ELSE 0 END) "
-        f"FROM card_instances WHERE owner_id = ? AND template_id IN ({placeholders}) "
-        "GROUP BY template_id"
+        f"SELECT template_id, is_shiny, is_mythical FROM card_instances WHERE owner_id = ? AND template_id IN ({placeholders})"
     ), (owner_id, *template_ids))
     for row in (cur.fetchall() if USE_PG else cur):
-        tid, base, shiny, mythical = row
-        result[tid] = {"base": base or 0, "shiny": shiny or 0, "mythical": mythical or 0}
+        tid, is_shiny, is_mythical = row
+        if not is_shiny and not is_mythical:
+            result[tid]["base"] += 1
+        if is_shiny or is_mythical:
+            result[tid]["shiny"] += 1
+        if is_mythical:
+            result[tid]["mythical"] += 1
     conn.close()
     return result
 
